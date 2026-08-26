@@ -36,9 +36,7 @@ Only `run2.sh` and `gr.sh` are retained as experiment shell scripts.
 Create an isolated environment and install the artifact:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[templates,dev]"
+uv sync --all-extras
 ```
 
 Configure the LLM provider through environment variables. Secrets are never stored in the source tree:
@@ -81,7 +79,7 @@ For the four-dataset experiment, provide a local raw-data root with the followin
 Preprocess one category manually:
 
 ```bash
-python -m gagc.data_preprocess \
+uv run -m gagc.data_preprocess \
   --dataset Movies_and_TV \
   --source 2023 \
   --local-dir /path/to/amazon_raw \
@@ -109,7 +107,7 @@ Provide a local directory containing either preprocessed matrices or raw matrice
 Create the arrays consumed by `gr.sh`:
 
 ```bash
-python prepare_gr_data.py \
+uv run prepare_gr_data.py \
   --raw-dir /path/to/kuairec_raw \
   --output-dir ./input/kuairec
 ```
@@ -213,7 +211,7 @@ Trial-local workspaces are created under `workspace/<run-id>/`.
 Run the complete unit-test suite:
 
 ```bash
-python -m pytest -q
+uv run pytest -q
 ```
 
 Check shell syntax:

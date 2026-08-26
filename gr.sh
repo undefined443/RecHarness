@@ -113,13 +113,13 @@ fi
 
 # Install the legacy-compatible package if needed.
 if ! $PYTHON -c "import gagc" 2>/dev/null; then
-    log_info "The gagc compatibility package is not installed; running pip install -e ."
-    pip install -e "${PROJ_ROOT}" -q || die "pip install -e . failed"
+    log_info "The gagc compatibility package is not installed; running uv pip install -e ."
+    uv pip install -e "${PROJ_ROOT}" -q || die "uv pip install -e . failed"
 fi
 $PYTHON -c "import gagc" 2>/dev/null || die "The gagc compatibility package could not be imported"
-$PYTHON -c "import torch" 2>/dev/null || die "PyTorch is not installed; run pip install torch"
-$PYTHON -c "import langsmith" 2>/dev/null || { pip install langsmith -q; }
-$PYTHON -c "import langchain_openai" 2>/dev/null || { pip install langchain-openai -q; }
+$PYTHON -c "import torch" 2>/dev/null || die "PyTorch is not installed; run uv pip install torch"
+$PYTHON -c "import langsmith" 2>/dev/null || { uv pip install langsmith -q; }
+$PYTHON -c "import langchain_openai" 2>/dev/null || { uv pip install langchain-openai -q; }
 
 # Detect GPUs.
 GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l || echo 0)

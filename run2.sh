@@ -132,13 +132,13 @@ log_info "Project root: ${PROJ_ROOT}"
     || die "VOLCENGINE_API_KEY is not set. Export it before running this script."
 
 if ! $PYTHON -c "import gagc" 2>/dev/null; then
-    log_info "The legacy-compatible gagc package is not installed; running pip install -e ."
-    pip install -e "${PROJ_ROOT}" -q || die "pip install -e . failed"
+    log_info "The legacy-compatible gagc package is not installed; running uv pip install -e ."
+    uv pip install -e "${PROJ_ROOT}" -q || die "uv pip install -e . failed"
 fi
 $PYTHON -c "import gagc" 2>/dev/null || die "The gagc compatibility package could not be imported"
 $PYTHON -c "import torch" 2>/dev/null || die "PyTorch is not installed"
-$PYTHON -c "import langsmith" 2>/dev/null || { pip install langsmith -q; }
-$PYTHON -c "import langchain_openai" 2>/dev/null || { pip install langchain-openai -q; }
+$PYTHON -c "import langsmith" 2>/dev/null || { uv pip install langsmith -q; }
+$PYTHON -c "import langchain_openai" 2>/dev/null || { uv pip install langchain-openai -q; }
 
 GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l || echo 0)
 if [[ "$GPU_COUNT" -eq 0 ]]; then
@@ -190,7 +190,7 @@ else
     [[ -f "${PREPROCESS_SCRIPT}" ]] || die "Could not find ${PREPROCESS_SCRIPT}"
     [[ -n "${RAW_DATA_DIR}" ]] || die "--raw-data-dir is required unless --prepared-data is used"
     $PYTHON -c "import pandas, tqdm" 2>/dev/null || {
-        pip install pandas tqdm -q
+        uv pip install pandas tqdm -q
     }
     for DS in "${DATASETS[@]}"; do
         if [[ -f "${TRAINVAL_DIR}/${DS}_train.txt" && \
