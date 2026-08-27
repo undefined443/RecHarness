@@ -217,6 +217,19 @@ agent = create_spooky_agent(
     basin_transfer_rho   = ${BASIN_TRANSFER_RHO},
 )
 
+# UUID v7 thread_id (LangSmith's recommended format -- sorts by creation time in
+# thread list views). Persisted under logs_root so re-running with the same
+# --run-id resumes the same LangGraph thread instead of starting a fresh one.
+from langsmith.uuid import uuid7
+_thread_id_path = os.path.join("${LOGS_DIR}", "thread_id.txt")
+if os.path.isfile(_thread_id_path):
+    with open(_thread_id_path) as f:
+        thread_id = f.read().strip()
+else:
+    thread_id = str(uuid7())
+    with open(_thread_id_path, "w") as f:
+        f.write(thread_id)
+
 result = agent.invoke(
     {"messages": [{"role": "user", "content": (
         "Minimize multi-class log loss on spooky-author-identification "
@@ -237,7 +250,11 @@ result = agent.invoke(
         "Median=0.41879). This final evaluation is for reporting only -- never feed test results "
         "back into search."
     )}]},
-    config={"configurable": {"thread_id": "${RUN_ID}-${COLD_START}"}},
+    config={
+        "configurable": {"thread_id": thread_id},
+        "run_name": "${RUN_ID}-${COLD_START}",
+        "metadata": {"run_id": "${RUN_ID}", "cold_start": "${COLD_START}"},
+    },
 )
 
 os.makedirs("${RESULTS_DIR}", exist_ok=True)

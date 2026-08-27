@@ -278,6 +278,20 @@ _perdataset_hint = (
     "working/{dataset}_model.pt, and predict.py routes by dataset_name."
     if _cold in {"perdataset", "sasrec_perdataset", "hstu_perdataset"} else ""
 )
+
+# UUID v7 thread_id (LangSmith's recommended format -- sorts by creation time in
+# thread list views). Persisted under logs_root so re-running with the same
+# --run-id resumes the same LangGraph thread instead of starting a fresh one.
+from langsmith.uuid import uuid7
+_thread_id_path = os.path.join("${LOGS_DIR}", "thread_id.txt")
+if os.path.isfile(_thread_id_path):
+    with open(_thread_id_path) as f:
+        thread_id = f.read().strip()
+else:
+    thread_id = str(uuid7())
+    with open(_thread_id_path, "w") as f:
+        f.write(thread_id)
+
 result = agent.invoke(
     {"messages": [{"role": "user", "content": (
         "Optimize the sequential recommender to maximize HR@10 across the four Amazon datasets.\n"
@@ -290,7 +304,11 @@ result = agent.invoke(
         "four optimization hypotheses in parallel and improve HR@10.\n"
         "Run all four hypotheses through execute_trial_group each iteration on GPUs ${GPU_IDS_DISPLAY}."
     )}]},
-    config={"configurable": {"thread_id": "${RUN_ID}-${COLD_START}"}},
+    config={
+        "configurable": {"thread_id": thread_id},
+        "run_name": "${RUN_ID}-${COLD_START}",
+        "metadata": {"run_id": "${RUN_ID}", "cold_start": "${COLD_START}"},
+    },
 )
 
 os.makedirs("${RESULTS_DIR}", exist_ok=True)
