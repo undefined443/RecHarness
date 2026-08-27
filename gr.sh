@@ -180,7 +180,7 @@ from gagc.agent import create_gr_agent
 
 agent = create_gr_agent(
     llm_provider       = "volcengine",
-    model_id           = "glm-5.2",
+    model_id           = "glm-5-2-260617",
     train_data         = "${TRAIN_DATA}",
     test_data          = "${TEST_DATA}",
     cold_start         = "${COLD_START}",

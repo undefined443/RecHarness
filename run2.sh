@@ -258,7 +258,7 @@ from gagc.agent import create_gagc_agent
 
 agent = create_gagc_agent(
     llm_provider       = "volcengine",
-    model_id           = "glm-5.2",
+    model_id           = "glm-5-2-260617",
     data_dir           = "${TRAINVAL_DIR}",
     test_dir           = "${TEST_DIR}",
     cold_start         = "${COLD_START}",

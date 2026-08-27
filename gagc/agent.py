@@ -51,11 +51,10 @@ from gagc.tools import (
     update_thompson_state,
 )
 
-# Anthropic-compatible: https://ark.cn-beijing.volces.com/api/plan
-# OpenAI-compatible:    https://ark.cn-beijing.volces.com/api/plan/v3
+# OpenAI-compatible: https://ark.cn-beijing.volces.com/api/v3
 # Using OpenAI-compatible since langchain_openai is more reliable for tool-use.
-_VOLCENGINE_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
-_VOLCENGINE_MODEL    = "glm-5.2[1m]"
+_VOLCENGINE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
+_VOLCENGINE_MODEL    = "glm-5-2-260617"
 
 
 def _resolve_volcengine_api_key(api_key: str | None) -> str:
@@ -304,7 +303,7 @@ def create_gagc_agent(
 
     Args:
         llm_provider: 'volcengine' (default, GLM-5.1) | 'anthropic' | any deepagents provider string.
-        model_id: Model name. Default 'glm-5.2' for VolcEngine.
+        model_id: Model name. Default 'glm-5-2-260617' for VolcEngine.
         api_key: API key. For VolcEngine, read from VOLCENGINE_API_KEY env var if not passed.
         base_url: Override base URL. VolcEngine URL is bundled as default.
         data_dir: Directory with *_train.txt and *_valid.txt files.
