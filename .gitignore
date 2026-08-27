@@ -2,3 +2,9 @@
 *.egg-info/
 __pycache__/
 *.pyc
+
+# Runtime data/output directories
+input/
+logs/
+results/
+workspace/
