@@ -337,6 +337,11 @@ Each iteration:
    sum of its members' runtimes. `parallel_group_estimated_wall_secs` already
    equals that sum, so if `global_budget >= parallel_group_estimated_wall_secs`,
    the returned group is budget-safe. Do not divide `global_budget` by group size.
+   If the returned group is NOT budget-safe (`global_budget < parallel_group_estimated_wall_secs`),
+   do not call `execute_trial_group` -- stop the search loop immediately, call
+   `evaluate_final_incumbent(script_path)` on the current incumbent, and report final results.
+   Starting a group that cannot finish within the remaining budget wastes the rest of the
+   budget without producing a usable result.
 
 3. **Generate short textual hypotheses only** -- For each selected candidate, use
    run feedback, stdout/stderr, `experiment_skill`, `recent_text_gradients`,
@@ -381,6 +386,9 @@ Each iteration:
 update_thompson_state auto-maintains the `experiment_skill` field in state.json with patch-level
 winner lessons and concrete failure avoids. Use this memory to write short hypotheses for selected arms; do not write code into tool-call arguments.
 Thompson reward and promotion are validation-only. The held-out KuaiRec test file is used only by `evaluate_final_incumbent` after search ends.
+After the search budget is exhausted or the user asks for final reporting, call
+`evaluate_final_incumbent(script_path)` exactly once on the frozen incumbent train.py and report
+the returned test metrics (WT/WR xAUC/MAE). Do not feed final test results into another round.
 
 ## Key constraints
 - When modifying GR_HIDDEN_DIM, also update GR_FEAT_DIM to match.
@@ -523,6 +531,11 @@ Each iteration:
    sum of its members' runtimes. `parallel_group_estimated_wall_secs` already
    equals that sum, so if `global_budget >= parallel_group_estimated_wall_secs`,
    the returned group is budget-safe. Do not divide `global_budget` by group size.
+   If the returned group is NOT budget-safe (`global_budget < parallel_group_estimated_wall_secs`),
+   do not call `execute_trial_group` -- stop the search loop immediately, call
+   `evaluate_final_incumbent(script_path)` on the current incumbent, and report final results.
+   Starting a group that cannot finish within the remaining budget wastes the rest of the
+   budget without producing a usable result.
 
 3. **Generate short textual hypotheses only** -- For each selected candidate, use
    run feedback, stdout/stderr, `experiment_skill`, `recent_text_gradients`,
@@ -565,6 +578,11 @@ update_thompson_state auto-maintains the `experiment_skill` field in state.json 
 winner lessons and concrete failure avoids. Use this memory to write short hypotheses for selected arms; do not write code into tool-call arguments.
 Thompson reward and promotion are validation-only. The held-out test split (private_test.csv) is
 used only by `evaluate_final_incumbent` after search ends, via the official grading logic.
+After the search budget is exhausted or the user asks for final reporting, call
+`evaluate_final_incumbent(script_path)` exactly once on the frozen incumbent train.py and report
+the returned test_metrics.SpookyAuthor.log_loss, comparing it against the official Kaggle medal
+thresholds (Gold=0.16506, Silver=0.26996, Bronze=0.29381, Median=0.41879). Do not feed final test
+results into another round.
 
 ## Key constraints
 - val_score is a transform of val_log_loss (higher is better, floor at 0); the underlying metric
