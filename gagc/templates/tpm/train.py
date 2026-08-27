@@ -18,10 +18,9 @@ import random
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
-
 
 TRAIN_DATA = os.environ.get("GR_TRAIN_DATA", "")
 TEST_DATA = os.environ.get("GR_TEST_DATA", "")
@@ -246,8 +245,7 @@ def xauc_score(labels: np.ndarray, preds: np.ndarray) -> float:
     ranks = inv.astype(np.int64)
     bit = np.zeros(ranks.max() + 2, dtype=np.int64)
     inversions = 0
-    seen = 0
-    for rank in ranks:
+    for seen, rank in enumerate(ranks):
         idx = int(rank) + 1
         prefix = 0
         j = idx
@@ -259,7 +257,6 @@ def xauc_score(labels: np.ndarray, preds: np.ndarray) -> float:
         while j < bit.size:
             bit[j] += 1
             j += j & -j
-        seen += 1
     return float(inversions / (n * (n - 1) / 2.0))
 
 

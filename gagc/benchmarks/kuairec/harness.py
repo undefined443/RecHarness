@@ -18,12 +18,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
-from typing import Optional
 
-from gagc.benchmarks.kuairec.grader import compute_metrics
-from gagc.benchmarks.kuairec.task import ALL_METRICS, PRIMARY_METRIC, TASK
+from gagc.benchmarks.kuairec.task import PRIMARY_METRIC
 
 
 @dataclass
@@ -83,7 +80,7 @@ def evaluate(
     BenchmarkResult
     """
     if verbose:
-        print(f"[benchmark] Running GR training + evaluation ...", flush=True)
+        print("[benchmark] Running GR training + evaluation ...", flush=True)
 
     env = os.environ.copy()
     env["GR_TRAIN_DATA"] = os.path.abspath(train_data)
@@ -93,10 +90,10 @@ def evaluate(
         [sys.executable, train_script],
         capture_output=True,
         env=env,
+        check=False,
     )
 
     stdout = result.stdout.decode(errors="replace")
-    stderr = result.stderr.decode(errors="replace")
 
     metrics = _parse_metrics(stdout)
 

@@ -23,7 +23,7 @@ import pickle
 import random
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 # ── Hyper-parameters ──────────────────────────────────────────────────

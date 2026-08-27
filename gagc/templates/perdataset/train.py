@@ -34,7 +34,7 @@ from collections import defaultdict
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
 # ── Hyper-parameters ──────────────────────────────────────────────────
 HIDDEN_UNITS = int(os.environ.get("SASREC_HIDDEN",    "64"))

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 
 import pytest
 
-from gagc.claude_code_backend import claude_backend_enabled, run_claude_code_trial
 from gagc import tools
+from gagc.claude_code_backend import claude_backend_enabled, run_claude_code_trial
 from gagc.state import ThompsonState
 
 

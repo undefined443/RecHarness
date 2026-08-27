@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 import math
-import os
-import sys
-import tempfile
 
 import pytest
 
@@ -18,7 +15,6 @@ from gagc.benchmarks.amazon_reviews.protocol import (
     check_scores,
     load_predict_fn,
 )
-
 
 # ================================================================== #
 # rank_positive                                                       #

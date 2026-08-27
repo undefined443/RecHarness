@@ -27,15 +27,16 @@ Output files:
     <data_dir>/text_name_dict.json.gz -- item text metadata (title, description, timestamp)
 """
 
-import os
+import argparse
 import gzip
 import json
-import argparse
-import random
+import os
 import pickle
+import random
+from collections import defaultdict
+
 import numpy as np
 from tqdm import tqdm
-from collections import defaultdict
 
 try:
     import pandas as pd
@@ -269,10 +270,10 @@ def preprocess_amazon_2014_sasrec(
 
 def preprocess_raw_5core(
     fname: str,
-    local_dir: str = None,
-    data_dir: str = None,
-    test_dir: str = None,
-    sample_ratio: float = None,
+    local_dir: str | None = None,
+    data_dir: str | None = None,
+    test_dir: str | None = None,
+    sample_ratio: float | None = None,
     seed: int = 0,
 ):
     """

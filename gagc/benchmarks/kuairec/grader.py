@@ -1,7 +1,6 @@
 """Metric computation for KuaiRec watch time prediction evaluation."""
 from __future__ import annotations
 
-import math
 import numpy as np
 
 

@@ -63,19 +63,18 @@ import time
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.preprocessing import LabelEncoder
+from torch import nn
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 # ── make model subpackage importable when run as a script ─────────────────────
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from model.encoder import Encoder
 from model.decoder import Decoder
+from model.encoder import Encoder
 from model.transformer import Seq2Seq
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Hyper-parameters from env
@@ -194,7 +193,7 @@ def reduce_numbers(number: int, vocab_int: list[int]) -> tuple[int, list[int]]:
 
 def label_process(vocab, numeric_vocab, train_len, watch_ratio_all_for_vocab, device):
     special_tokens = ['<pad>', '<sos>', '<eos>']
-    pad_idx, sos_idx, eos_idx = 0, 1, 2
+    _pad_idx, sos_idx, eos_idx = 0, 1, 2
     vocab_int = [int(v) for v in numeric_vocab]
     vocab_map = {int(v): idx + len(special_tokens) for idx, v in enumerate(numeric_vocab)}
 
@@ -424,7 +423,6 @@ def compute_teacher_force_ratio(step: int) -> float:
 def train_one_epoch(epoch, model, train_loader, optimizer, criterion, durations, device):
     model.train()
     epoch_loss = 0
-    total_steps = 0
     for num_step, (X, qmsk, imsk, play_times, _video_durations, _watch_ratios,
                    seq_labels, seq_masks) in enumerate(train_loader, 1):
         X          = X.to(device)
@@ -435,7 +433,7 @@ def train_one_epoch(epoch, model, train_loader, optimizer, criterion, durations,
         seq_masks  = seq_masks.to(device)
 
         optimizer.zero_grad()
-        tfr = compute_teacher_force_ratio(total_steps)
+        tfr = compute_teacher_force_ratio(num_step - 1)
 
         output = model(X, qmsk, imsk, seq_labels[:, :-1], seq_masks[:, :-1], tfr)
         output_softmax = F.softmax(output, dim=-1)
@@ -463,7 +461,6 @@ def train_one_epoch(epoch, model, train_loader, optimizer, criterion, durations,
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
-        total_steps += 1
 
         if num_step == 1 or num_step % 500 == 0:
             print(f"Epoch {epoch}/{NUM_EPOCHS} step {num_step}: CE={loss_ce.item():.4f} Huber={loss_hub.item():.4f}")

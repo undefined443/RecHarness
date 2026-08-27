@@ -15,14 +15,11 @@ Options:
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
-
 
 # ---------------------------------------------------------------------------
 # Normalize raw interaction matrices for the GR input pipeline.
@@ -144,7 +141,7 @@ def build_item_categories_from_local(raw_dir: Path) -> Path:
     df = pd.read_csv(str(src))
 
     # Identify tag columns — typically 'feat0'..'feat3' or 'category_0'..'category_3'
-    tag_cols = [c for c in df.columns if c.startswith("feat") or c.startswith("category")]
+    tag_cols = [c for c in df.columns if c.startswith(("feat", "category"))]
     if not tag_cols:
         # Treat all non-id columns as tag columns
         id_col   = "item_id" if "item_id" in df.columns else "video_id"
@@ -335,7 +332,7 @@ def run(args) -> None:
     test_out  = output_dir / "test_data.npy"
 
     if train_out.exists() and test_out.exists() and not args.no_cache:
-        print(f"Output files already exist:")
+        print("Output files already exist:")
         print(f"  {train_out}")
         print(f"  {test_out}")
         print("Use --no-cache to force re-generation.")

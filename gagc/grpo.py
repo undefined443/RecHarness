@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from gagc.state import ThompsonState
 
-from gagc.schemas import MutationSpec
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +72,7 @@ SPOOKY_JUMPING_DIMS: set[str] = {"change_architecture"}
 # ---------------------------------------------------------------------------
 
 def thompson_sample(
-    state: "ThompsonState",
+    state: ThompsonState,
     candidate_arms: list[str],
     mutex_groups: list[set[str]],
     G: int = 4,

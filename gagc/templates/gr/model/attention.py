@@ -1,15 +1,16 @@
 import math
+
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class ScaleDotProductAttention(nn.Module):
     def __init__(self):
-        super(ScaleDotProductAttention, self).__init__()
+        super().__init__()
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, q, k, v, mask=None):
-        batch_size, head, length, d_tensor = k.size()
+        _batch_size, _head, _length, d_tensor = k.size()
         k_t = k.transpose(2, 3)
         score = torch.matmul(q, k_t) / math.sqrt(d_tensor)
         if mask is not None:
@@ -21,7 +22,7 @@ class ScaleDotProductAttention(nn.Module):
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, n_head):
-        super(MultiHeadAttention, self).__init__()
+        super().__init__()
         self.n_head = n_head
         self.attention = ScaleDotProductAttention()
         self.w_q = nn.Linear(d_model, d_model)
@@ -32,7 +33,7 @@ class MultiHeadAttention(nn.Module):
     def forward(self, q, k, v, mask=None):
         q, k, v = self.w_q(q), self.w_k(k), self.w_v(v)
         q, k, v = self.split(q), self.split(k), self.split(v)
-        out, attention = self.attention(q, k, v, mask=mask)
+        out, _attention = self.attention(q, k, v, mask=mask)
         out = self.concat(out)
         out = self.w_concat(out)
         return out
@@ -52,7 +53,7 @@ class MultiHeadAttention(nn.Module):
 
 class PositionwiseFeedForward(nn.Module):
     def __init__(self, d_model, hidden, drop_prob=0.1):
-        super(PositionwiseFeedForward, self).__init__()
+        super().__init__()
         self.linear1 = nn.Linear(d_model, hidden)
         self.linear2 = nn.Linear(hidden, d_model)
         self.relu = nn.ReLU()

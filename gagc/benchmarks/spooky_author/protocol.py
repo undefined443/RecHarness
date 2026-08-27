@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 

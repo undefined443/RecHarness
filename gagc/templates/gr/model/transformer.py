@@ -1,11 +1,12 @@
 import random
+
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, decoder, use_embedding_mixup, max_values_per_column, feat_dim, device):
-        super(Seq2Seq, self).__init__()
+        super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.use_embedding_mixup = use_embedding_mixup

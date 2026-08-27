@@ -9,9 +9,12 @@ import pytest
 
 from gagc.benchmarks.spooky_author.grader import local_log_loss, to_val_score
 from gagc.benchmarks.spooky_author.grading import InvalidSubmissionError, grade
-from gagc.benchmarks.spooky_author.protocol import ProtocolViolation, check_probabilities, load_predict_fn
+from gagc.benchmarks.spooky_author.protocol import (
+    ProtocolViolation,
+    check_probabilities,
+    load_predict_fn,
+)
 from gagc.benchmarks.spooky_author.task import CLASSES, RANDOM_BASELINE_LOG_LOSS
-
 
 # ================================================================== #
 # grading.grade                                                       #

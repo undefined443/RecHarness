@@ -32,8 +32,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from typing import Dict, Tuple
-
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -45,7 +43,7 @@ DEFAULT_DATASETS = [
 ]
 
 
-def _scan_file(filepath: str) -> Tuple[int, int]:
+def _scan_file(filepath: str) -> tuple[int, int]:
     """Return (max_user_id, max_item_id) from a split file.
 
     Each line is expected to be ``<user_id> <item_id>``.
@@ -61,10 +59,8 @@ def _scan_file(filepath: str) -> Tuple[int, int]:
                 continue
             u, i = line.split()
             u, i = int(u), int(i)
-            if u > max_user:
-                max_user = u
-            if i > max_item:
-                max_item = i
+            max_user = max(max_user, u)
+            max_item = max(max_item, i)
     return max_user, max_item
 
 
@@ -72,7 +68,7 @@ def compute_stats(
     dataset_name: str,
     data_dir: str,
     test_dir: str,
-) -> Dict[str, int]:
+) -> dict[str, int]:
     """Compute usernum and itemnum across all three splits."""
     splits = {
         "train": os.path.join(data_dir, f"{dataset_name}_train.txt"),

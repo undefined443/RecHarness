@@ -14,4 +14,4 @@ Quick-start:
 from gagc.benchmarks.kuairec.harness import BenchmarkResult, evaluate
 from gagc.benchmarks.kuairec.task import TASK
 
-__all__ = ["evaluate", "BenchmarkResult", "TASK"]
+__all__ = ["TASK", "BenchmarkResult", "evaluate"]

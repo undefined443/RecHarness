@@ -15,7 +15,7 @@ import os
 import pickle
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 

@@ -20,11 +20,10 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import log_loss as sklearn_log_loss
-from torch import optim
+from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
 
 # ── Hyper-parameters ──────────────────────────────────────────────────

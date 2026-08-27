@@ -1,12 +1,13 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
+
 from model.attention import MultiHeadAttention, PositionwiseFeedForward
 
 
 class TransformerEmbedding(nn.Module):
     def __init__(self, vocab_size, d_model, drop_prob):
-        super(TransformerEmbedding, self).__init__()
+        super().__init__()
         self.tok_emb = nn.Embedding(vocab_size, d_model)
         self.dropout = nn.Dropout(p=drop_prob)
 
@@ -16,7 +17,7 @@ class TransformerEmbedding(nn.Module):
 
 class DecoderLayer(nn.Module):
     def __init__(self, d_model, ffn_hidden, n_head, drop_prob):
-        super(DecoderLayer, self).__init__()
+        super().__init__()
         self.self_attention = MultiHeadAttention(d_model=d_model, n_head=n_head)
         self.norm1 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(p=drop_prob)
@@ -50,7 +51,7 @@ class DecoderLayer(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, d_model, n_head, ffn_hidden, dec_voc_size, drop_prob, n_layers):
-        super(Decoder, self).__init__()
+        super().__init__()
         self.output_dim = dec_voc_size
         self.emb = TransformerEmbedding(vocab_size=dec_voc_size, d_model=d_model, drop_prob=drop_prob)
         self.layers = nn.ModuleList([

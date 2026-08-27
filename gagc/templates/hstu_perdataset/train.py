@@ -18,8 +18,8 @@ from collections import defaultdict
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 # ── Hyper-parameters ──────────────────────────────────────────────────
 HIDDEN_UNITS = int(os.environ.get("HSTU_HIDDEN", "64"))

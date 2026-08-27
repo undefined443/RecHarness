@@ -25,27 +25,32 @@ Usage (Claude, override):
     )
 """
 
-import os
 import json
+import os
 import shutil
 import sqlite3
 import sys
 from typing import Any
 
-from gagc.prompts import GAGC_ORCHESTRATOR_PROMPT, GR_ORCHESTRATOR_PROMPT, SPOOKY_ORCHESTRATOR_PROMPT
+import gagc.tools as _tools_module
+from gagc.prompts import (
+    GAGC_ORCHESTRATOR_PROMPT,
+    GR_ORCHESTRATOR_PROMPT,
+    SPOOKY_ORCHESTRATOR_PROMPT,
+)
 from gagc.templates import get_template_dir
 from gagc.tools import (
     ServerConfig,
+    _active_arms,
     default_experiment_skill_for_policy,
+    evaluate_final_incumbent,
     execute_trial,
     execute_trial_group,
-    evaluate_final_incumbent,
     promote_winner,
     propose_action_group,
     update_thompson_state,
-    _active_arms,
 )
-import gagc.tools as _tools_module
+
 # Anthropic-compatible: https://ark.cn-beijing.volces.com/api/plan
 # OpenAI-compatible:    https://ark.cn-beijing.volces.com/api/plan/v3
 # Using OpenAI-compatible since langchain_openai is more reliable for tool-use.
@@ -268,7 +273,7 @@ def _seed_thompson_state(store: Any, default_state: Any) -> None:
     import datetime
     store.put(("gagc", "thompson"), "/state.json", {
         "content": default_state.to_json(),
-        "modified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "modified_at": datetime.datetime.now(datetime.UTC).isoformat(),
     })
 
 
@@ -396,7 +401,9 @@ def create_gagc_agent(
     #
     # Fix: patch _get_effective_messages in _DeepAgentsSummarizationMiddleware to
     # guarantee the result is never empty (fall back to the raw request messages).
-    from deepagents.middleware.summarization import _DeepAgentsSummarizationMiddleware as _DSM
+    from deepagents.middleware.summarization import (
+        _DeepAgentsSummarizationMiddleware as _DSM,
+    )
     _original_get_effective = _DSM._get_effective_messages
     def _safe_get_effective_messages(self, request):  # type: ignore[misc]
         result = _original_get_effective(self, request)
@@ -433,7 +440,7 @@ def create_gagc_agent(
     _tools_module._STORE = store
 
     # Pre-seed ThompsonState so read_file("/thompson_state/state.json") succeeds on iteration 1.
-    from gagc.state import ThompsonState, ArmState
+    from gagc.state import ArmState, ThompsonState
     default_state = ThompsonState(
         arms={arm: ArmState(name=arm) for arm in _active_arms()},
         global_budget=global_budget_secs,
@@ -591,7 +598,9 @@ def create_gr_agent(
     if not use_thompson_sampling:
         system_prompt += TEXTUAL_GRADIENT_ROUTING_PROMPT
 
-    from deepagents.middleware.summarization import _DeepAgentsSummarizationMiddleware as _DSM
+    from deepagents.middleware.summarization import (
+        _DeepAgentsSummarizationMiddleware as _DSM,
+    )
     _original_get_effective = _DSM._get_effective_messages
     def _safe_get_effective_messages(self, request):  # type: ignore[misc]
         result = _original_get_effective(self, request)
@@ -620,7 +629,7 @@ def create_gr_agent(
     store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
     _tools_module._STORE = store
 
-    from gagc.state import ThompsonState, ArmState
+    from gagc.state import ArmState, ThompsonState
     from gagc.tools import _active_arms
     default_state = ThompsonState(
         arms={arm: ArmState(name=arm) for arm in _active_arms()},
@@ -790,11 +799,19 @@ def create_spooky_agent(
     if not use_thompson_sampling:
         system_prompt += TEXTUAL_GRADIENT_ROUTING_PROMPT
 
+    from deepagents import create_deep_agent
+    from deepagents.backends import (
+        CompositeBackend,
+        FilesystemBackend,
+        LocalShellBackend,
+        StateBackend,
+        StoreBackend,
+    )
     model = _build_model(llm_provider, model_id, api_key, base_url)
     store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
     _tools_module._STORE = store
 
-    from gagc.state import ThompsonState, ArmState
+    from gagc.state import ArmState, ThompsonState
     from gagc.tools import _active_arms
     default_state = ThompsonState(
         arms={arm: ArmState(name=arm) for arm in _active_arms()},

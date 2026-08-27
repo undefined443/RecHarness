@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
-import hashlib
-import ast
-import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
 from copy import deepcopy
+from dataclasses import dataclass, field
 from typing import Any
 
 from gagc.grpo import (
@@ -28,7 +28,7 @@ from gagc.grpo import (
     compute_group_advantages,
     thompson_sample,
 )
-from gagc.schemas import MutationSpec, TrialResult
+from gagc.schemas import MutationSpec
 from gagc.state import ArmState, ThompsonState
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ class ServerConfig:
     cpus_per_trial: int = 16
     gpu_ids: list[int] = field(default_factory=list)
     numa_map: dict[int, list[int]] = field(default_factory=lambda: {
-        0: list(range(0, 32)) + list(range(64, 96)),
+        0: list(range(32)) + list(range(64, 96)),
         1: list(range(32, 64)) + list(range(96, 128)),
     })
 
@@ -134,7 +134,7 @@ _SERVER_CONFIG: ServerConfig = ServerConfig()
 
 def _utc_now_iso() -> str:
     import datetime
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 def _json_safe(obj: Any) -> Any:
@@ -1971,7 +1971,10 @@ def execute_trial(
 
     if _uses_claude_code_backend(spec):
         try:
-            from gagc.claude_code_backend import claude_backend_enabled, run_claude_code_trial
+            from gagc.claude_code_backend import (
+                claude_backend_enabled,
+                run_claude_code_trial,
+            )
         except Exception as exc:
             return _make_trial_result(
                 spec, wall_time=0.0, timed_out=False, oom=False,
@@ -2048,10 +2051,9 @@ def execute_trial(
                 error=err,
             )
     elif spec.code_diff.strip():
-        workspace_dir = os.path.dirname(train_path)
         patch_result = subprocess.run(
             ["patch", "-p1", "--input=/dev/stdin", train_path],
-            input=spec.code_diff.encode(), capture_output=True, timeout=10,
+            input=spec.code_diff.encode(), capture_output=True, timeout=10, check=False,
         )
         if patch_result.returncode != 0:
             return _make_trial_result(
@@ -2101,6 +2103,7 @@ def execute_trial(
         proc = subprocess.run(
             [sys.executable, train_path],
             capture_output=True, timeout=hard_timeout, env=env, preexec_fn=_set_affinity,
+            check=False,
         )
         stdout = proc.stdout.decode(errors="replace")
         stderr = proc.stderr.decode(errors="replace")
@@ -2395,14 +2398,14 @@ def _select_winner_by_benchmark(results: list[dict]) -> dict | None:
     return max(valid, key=_key)
 
 
-def _previous_best_test(state: "ThompsonState") -> float | None:
+def _previous_best_test(state: ThompsonState) -> float | None:
     """Return the best validation score selected before this round."""
     if state.score_history:
         return max(state.score_history)
     return None
 
 
-def _previous_winner_val(state: "ThompsonState") -> float | None:
+def _previous_winner_val(state: ThompsonState) -> float | None:
     """Return the most recent previous winner val_score from experiment_memory."""
     for digest in reversed(state.experiment_memory):
         if digest.get("is_winner") and digest.get("valid") and digest.get("val_score") is not None:
@@ -2532,7 +2535,7 @@ def _classify_failure(result: dict) -> str:
 
 def _build_experiment_digest(
     result: dict,
-    state: "ThompsonState",
+    state: ThompsonState,
     is_winner: bool,
     prev_best: float | None,
     prev_winner_val: float | None,
@@ -2542,7 +2545,6 @@ def _build_experiment_digest(
     bench = _benchmark_score(result)
     val = float(result.get("val_score", 0.0))
     test = result.get("test_score")
-    test_float = float(test) if test is not None else None
     val_metrics = result.get("val_metrics") or {}
     mae = float(val_metrics.get("MAE", val_metrics.get("WT-MAE", float("inf"))))
     valid = _is_valid_trial(result)
@@ -2567,7 +2569,6 @@ def _build_experiment_digest(
 
 def _build_winner_lesson(digest: dict) -> str:
     """Build a one-sentence winner patch lesson for recent_text_gradients."""
-    arm = digest["arm"]
     patch = digest["patch_summary"]
     delta = digest.get("delta_vs_prev_best")
     val_sup = digest.get("val_support", "unavailable")
@@ -2653,7 +2654,7 @@ def _merge_failure_memory(memory: list[dict], new_avoids: list[dict]) -> list[di
     return memory
 
 
-def _render_experiment_skill(state: "ThompsonState") -> str:
+def _render_experiment_skill(state: ThompsonState) -> str:
     """Render the current ExperimentSkill document from state."""
     lines = [
         "# RecHarness Experiment Skill",
@@ -2689,7 +2690,7 @@ def _render_experiment_skill(state: "ThompsonState") -> str:
     return "\n".join(lines)
 
 
-def _build_skill_guidance_for_arm(arm: str, state: "ThompsonState") -> str:
+def _build_skill_guidance_for_arm(arm: str, state: ThompsonState) -> str:
     """Return the relevant ExperimentSkill section appended as guidance for a specific arm."""
     parts = []
 
@@ -3020,9 +3021,7 @@ def update_thompson_state(
         snapshot = getattr(state, "provisional_incumbent", {}) or {}
         if snapshot and prev_best is not None and round_best > prev_best:
             state.provisional_incumbent = {}
-    elif valid_scores and _promotion_succeeded and _provisional_jump and prev_best is not None:
-        state.score_history.append(prev_best)
-    elif valid_scores and _kept_incumbent and prev_best is not None:
+    elif valid_scores and _promotion_succeeded and _provisional_jump and prev_best is not None or valid_scores and _kept_incumbent and prev_best is not None:
         state.score_history.append(prev_best)
 
     # --- Process pending basin-jumping back-fills after this round's score is recorded ---
@@ -3219,7 +3218,7 @@ def update_thompson_state(
             import datetime
             _STORE.put(_STORE_NAMESPACE, _STORE_KEY, {
                 "content": updated_json,
-                "modified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "modified_at": datetime.datetime.now(datetime.UTC).isoformat(),
             })
         except Exception:
             pass
@@ -3234,7 +3233,7 @@ def update_thompson_state(
                 import datetime
                 _STORE.put(_STORE_NAMESPACE, _STORE_KEY, {
                     "content": updated_json,
-                    "modified_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "modified_at": datetime.datetime.now(datetime.UTC).isoformat(),
                 })
             except Exception:
                 pass
@@ -3756,6 +3755,7 @@ def evaluate_final_incumbent(
             capture_output=True,
             timeout=timeout,
             env=env,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         error = "timeout"

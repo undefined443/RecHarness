@@ -16,9 +16,8 @@ from __future__ import annotations
 import os
 import pickle
 
-import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 # ── Hyper-parameters ──────────────────────────────────────────────────

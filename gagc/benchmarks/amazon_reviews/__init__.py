@@ -25,10 +25,10 @@ from gagc.benchmarks.amazon_reviews.harness import (
 from gagc.benchmarks.amazon_reviews.task import DATASETS, TASK
 
 __all__ = [
-    "evaluate",
-    "evaluate_val_fast",
+    "DATASETS",
+    "TASK",
     "BenchmarkResult",
     "DatasetResult",
-    "TASK",
-    "DATASETS",
+    "evaluate",
+    "evaluate_val_fast",
 ]

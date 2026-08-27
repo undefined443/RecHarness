@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
-from typing import Any
-
+from dataclasses import dataclass, field
 
 _DEFAULT_EXPERIMENT_SKILL = """\
 # RecHarness Experiment Skill
@@ -86,7 +84,7 @@ class ThompsonState:
         return json.dumps(data, indent=2)
 
     @classmethod
-    def from_json(cls, text: str) -> "ThompsonState":
+    def from_json(cls, text: str) -> ThompsonState:
         data = json.loads(text)
 
         # Backward-compatible: old format had "dimensions" — ignore, start fresh

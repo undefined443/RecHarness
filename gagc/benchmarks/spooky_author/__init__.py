@@ -14,4 +14,4 @@ Quick-start:
 from gagc.benchmarks.spooky_author.harness import BenchmarkResult, evaluate
 from gagc.benchmarks.spooky_author.task import TASK
 
-__all__ = ["evaluate", "BenchmarkResult", "TASK"]
+__all__ = ["TASK", "BenchmarkResult", "evaluate"]

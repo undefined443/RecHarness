@@ -48,33 +48,30 @@ from __future__ import annotations
 import inspect
 import os
 import random
-import sys
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Literal, Optional
+from typing import Literal
 
 import numpy as np
 
-from gagc.benchmarks.amazon_reviews.grader import MetricAccumulator, rank_positive, aggregate_dataset_metrics
+from gagc.benchmarks.amazon_reviews.grader import (
+    MetricAccumulator,
+    aggregate_dataset_metrics,
+    rank_positive,
+)
 from gagc.benchmarks.amazon_reviews.protocol import (
-    ProtocolViolation,
     check_no_trivial_scores,
     check_scores,
     load_predict_fn,
 )
 from gagc.benchmarks.amazon_reviews.task import (
-    ALL_METRICS,
-    DATASETS,
     EVAL_SEED,
     MAX_EVAL_USERS,
     NUM_CANDIDATES,
     PRIMARY_METRIC,
-    TASK,
-    VAL_FAST_USERS,
-    VAL_NUM_NEG,
     active_datasets,
 )
-
 
 # ── Result dataclass ─────────────────────────────────────────────────
 
@@ -331,13 +328,13 @@ def _evaluate_one_dataset(
 def evaluate(
     predict_script: str,
     data_dir: str,
-    test_dir: Optional[str] = None,
-    datasets: Optional[list[str]] = None,
+    test_dir: str | None = None,
+    datasets: list[str] | None = None,
     mode: Literal["val", "test"] = "test",
     num_candidates: int = NUM_CANDIDATES,
     max_eval_users: int = MAX_EVAL_USERS,
     seed: int = EVAL_SEED,
-    interface_dir: Optional[str] = None,
+    interface_dir: str | None = None,
     verbose: bool = True,
 ) -> BenchmarkResult:
     """Evaluate a model on the Amazon Reviews SeqRec benchmark.
@@ -462,7 +459,7 @@ def evaluate_val_fast(
     predict_script: str,
     data_dir: str,
     max_eval_users: int = 200,
-    datasets: Optional[list[str]] = None,
+    datasets: list[str] | None = None,
     seed: int = EVAL_SEED,
     verbose: bool = True,
 ) -> BenchmarkResult:

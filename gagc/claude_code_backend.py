@@ -8,11 +8,11 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
-
-ValidationCallback = Callable[[], Optional[str]]
+ValidationCallback = Callable[[], str | None]
 
 
 @dataclass
@@ -95,6 +95,7 @@ def _run_claude_subprocess(
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                check=False,
             )
         except FileNotFoundError:
             raise
@@ -479,9 +480,7 @@ def _is_ignored_artifact(relpath: str) -> bool:
         return True
     if relpath.startswith("working/") and name == "predict.py":
         return True
-    if relpath.startswith(".gagc_claude/") or "/__pycache__/" in f"/{relpath}/":
-        return True
-    return False
+    return relpath.startswith(".gagc_claude/") or "/__pycache__/" in f"/{relpath}/"
 
 
 def _clean_relpath(path: str) -> str:

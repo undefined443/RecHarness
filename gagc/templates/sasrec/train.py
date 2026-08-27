@@ -21,7 +21,7 @@ import random
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.utils.data import Dataset
 
 # ── Hyper-parameters ──────────────────────────────────────────────────
@@ -261,7 +261,7 @@ def main():
     for name, param in model.named_parameters():
         try:
             torch.nn.init.xavier_normal_(param.data)
-        except:
+        except Exception:
             pass
 
     opt = torch.optim.Adam(model.parameters(), lr=LR, betas=(0.9, 0.98))

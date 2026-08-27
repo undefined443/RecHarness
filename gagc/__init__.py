@@ -3,6 +3,6 @@ __all__ = ["create_gagc_agent"]
 
 
 def create_gagc_agent(*args, **kwargs):
-    from gagc.agent import create_gagc_agent as _impl  # noqa: PLC0415
+    from gagc.agent import create_gagc_agent as _impl
 
     return _impl(*args, **kwargs)
