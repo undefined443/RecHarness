@@ -395,82 +395,81 @@ def preprocess_raw_5core(
         d = dataset[t]
         use_id = defaultdict(int)
         out_path = os.path.join(test_dir if t == 'test' else data_dir, f'{fname}_{t}.txt')
-        f = open(out_path, 'w')
         written = 0
 
-        for l in tqdm(d, desc=f"Writing {t}"):
-            user_id = l['user_id']
-            asin = l['parent_asin']
-            user_id_ = usermap[user_id]
+        with open(out_path, 'w') as f:
+            for l in tqdm(d, desc=f"Writing {t}"):
+                user_id = l['user_id']
+                asin = l['parent_asin']
+                user_id_ = usermap[user_id]
 
-            # Each user appears only once per split in the CSV; skip duplicates
-            if use_id[user_id_] != 0:
-                continue
-            use_id[user_id_] = 1
-
-            if use_key_dict.get(user_id_, 0) != 1 or CountU[user_id_] <= 4:
-                continue
-
-            use_items = [it for it in User_s[t][user_id_] if CountI[it] > 4]
-
-            if t == 'train':
-                if len(use_items) <= 4:
+                # Each user appears only once per split in the CSV; skip duplicates
+                if use_id[user_id_] != 0:
                     continue
-                use_train_dict[user_id_] = 1
+                use_id[user_id_] = 1
 
-                if user_id_ not in usermap_final:
-                    usernum_final += 1
-                    usermap_final[user_id_] = usernum_final
-                userid = usermap_final[user_id_]
-
-                for it in use_items:
-                    if it not in itemmap_final:
-                        itemnum_final += 1
-                        itemmap_final[it] = itemnum_final
-                    itemid = itemmap_final[it]
-
-                    desc = meta_dict.get(id2asin[it], [None, None])[1]
-                    text_dict['description'][itemid] = (
-                        desc[0] if isinstance(desc, list) and len(desc) > 0 else
-                        desc if isinstance(desc, str) else 'Empty description'
-                    )
-                    title = meta_dict.get(id2asin[it], [None, None])[0]
-                    text_dict['title'][itemid] = title if title else 'Empty title'
-                    text_dict['time'][itemid][userid] = time_dict[it].get(user_id_)
-
-                    f.write(f'{userid} {itemid}\n')
-                    written += 1
-            else:
-                if use_train_dict.get(user_id_, 0) != 1:
+                if use_key_dict.get(user_id_, 0) != 1 or CountU[user_id_] <= 4:
                     continue
 
-                for it in User_s[t][user_id_]:
-                    if CountI[it] <= 4:
+                use_items = [it for it in User_s[t][user_id_] if CountI[it] > 4]
+
+                if t == 'train':
+                    if len(use_items) <= 4:
                         continue
+                    use_train_dict[user_id_] = 1
 
                     if user_id_ not in usermap_final:
                         usernum_final += 1
                         usermap_final[user_id_] = usernum_final
                     userid = usermap_final[user_id_]
 
-                    if it not in itemmap_final:
-                        itemnum_final += 1
-                        itemmap_final[it] = itemnum_final
-                    itemid = itemmap_final[it]
+                    for it in use_items:
+                        if it not in itemmap_final:
+                            itemnum_final += 1
+                            itemmap_final[it] = itemnum_final
+                        itemid = itemmap_final[it]
 
-                    desc = meta_dict.get(id2asin[it], [None, None])[1]
-                    text_dict['description'][itemid] = (
-                        desc[0] if isinstance(desc, list) and len(desc) > 0 else
-                        desc if isinstance(desc, str) else 'Empty description'
-                    )
-                    title = meta_dict.get(id2asin[it], [None, None])[0]
-                    text_dict['title'][itemid] = title if title else 'Empty title'
-                    text_dict['time'][itemid][userid] = time_dict[it].get(user_id_)
+                        desc = meta_dict.get(id2asin[it], [None, None])[1]
+                        text_dict['description'][itemid] = (
+                            desc[0] if isinstance(desc, list) and len(desc) > 0 else
+                            desc if isinstance(desc, str) else 'Empty description'
+                        )
+                        title = meta_dict.get(id2asin[it], [None, None])[0]
+                        text_dict['title'][itemid] = title if title else 'Empty title'
+                        text_dict['time'][itemid][userid] = time_dict[it].get(user_id_)
 
-                    f.write(f'{userid} {itemid}\n')
-                    written += 1
+                        f.write(f'{userid} {itemid}\n')
+                        written += 1
+                else:
+                    if use_train_dict.get(user_id_, 0) != 1:
+                        continue
 
-        f.close()
+                    for it in User_s[t][user_id_]:
+                        if CountI[it] <= 4:
+                            continue
+
+                        if user_id_ not in usermap_final:
+                            usernum_final += 1
+                            usermap_final[user_id_] = usernum_final
+                        userid = usermap_final[user_id_]
+
+                        if it not in itemmap_final:
+                            itemnum_final += 1
+                            itemmap_final[it] = itemnum_final
+                        itemid = itemmap_final[it]
+
+                        desc = meta_dict.get(id2asin[it], [None, None])[1]
+                        text_dict['description'][itemid] = (
+                            desc[0] if isinstance(desc, list) and len(desc) > 0 else
+                            desc if isinstance(desc, str) else 'Empty description'
+                        )
+                        title = meta_dict.get(id2asin[it], [None, None])[0]
+                        text_dict['title'][itemid] = title if title else 'Empty title'
+                        text_dict['time'][itemid][userid] = time_dict[it].get(user_id_)
+
+                        f.write(f'{userid} {itemid}\n')
+                        written += 1
+
         print(f"  -> {out_path}  ({written} lines)")
 
     meta_out = os.path.join(data_dir, f'{fname}_text_name_dict.json.gz')

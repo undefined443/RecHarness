@@ -39,6 +39,14 @@ mlebench = ["kaggle>=1.6,<1.7"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+# BLE001 (blind except) / S110 (try-except-pass): the trial-execution harness
+# and its best-effort state/logging paths intentionally catch broad Exception
+# so a single failing trial or a failed log write never crashes the search
+# loop or an arbitrary LLM-mutated training script. Narrowing these on a
+# case-by-case basis would add risk without a clear correctness benefit.
+ignore = ["BLE001", "S110"]
+
 [tool.setuptools.packages.find]
 include = ["gagc*"]
 exclude = ["logs*", "input*", "results*", "workspace*", "examples*", "scripts*", "tests*"]
