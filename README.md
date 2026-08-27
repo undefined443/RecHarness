@@ -14,6 +14,7 @@ This Repo contains the source code, experiment entrypoints, model templates, ben
 
 - `run2.sh`: Amazon Reviews sequential-recommendation experiment entrypoint.
 - `gr.sh`: KuaiRec watch-time/ranking experiment entrypoint.
+- `spooky.sh`: MLE-Bench Lite Spooky Author Identification experiment entrypoint.
 - `prepare_gr_data.py`: local KuaiRec preprocessing utility.
 - `prepare_spooky_data.py`: local Spooky Author Identification preprocessing utility.
 - `gagc/data_preprocess.py`: local Amazon Reviews preprocessing utility.
@@ -25,7 +26,7 @@ This Repo contains the source code, experiment entrypoints, model templates, ben
 - `gagc/templates/`: cold-start recommendation-model templates.
 - `tests/`: unit tests for routing, benchmarks, arms, and the optional code-edit backend.
 
-Only `run2.sh` and `gr.sh` are retained as experiment shell scripts.
+Only `run2.sh`, `gr.sh`, and `spooky.sh` are retained as experiment shell scripts.
 
 ## Environment
 
@@ -172,11 +173,19 @@ bash gr.sh \
 
 The registered KuaiRec cold starts are `gr`, `d2q`, `ks_d2q`, and `tpm`.
 
-Both scripts support `--help`.
-
 ### MLE-Bench Lite: Spooky Author Identification
 
-There is no shell entrypoint for this benchmark yet — invoke the agent factory directly:
+```bash
+bash spooky.sh \
+  --train-data ./input/spooky_author/train.csv \
+  --test-data ./input/spooky_author/test.csv \
+  --gpus 0,1,2,3 \
+  --budget 43200
+```
+
+The only registered cold start is `spooky_mlp` (TF-IDF + a small MLP). This benchmark is CPU-friendly — GPU is used automatically when available but is not required; `--gpus` is only needed when GPUs are detected on the machine. `--val-data` and `--private-test-data` default to `val.csv`/`private_test.csv` siblings of `--train-data`.
+
+To call the agent factory directly instead of through the shell entrypoint:
 
 ```python
 from gagc.agent import create_spooky_agent
@@ -193,7 +202,7 @@ result = agent.invoke(
 )
 ```
 
-The only registered cold start is `spooky_mlp` (TF-IDF + a small MLP). This benchmark is CPU-friendly — GPU is used automatically when available but is not required.
+All three scripts support `--help`.
 
 ## Search Protocol
 
@@ -257,7 +266,7 @@ uv run pytest -q
 Check shell syntax:
 
 ```bash
-bash -n run2.sh gr.sh
+bash -n run2.sh gr.sh spooky.sh
 ```
 
 ## Important Compatibility Names
