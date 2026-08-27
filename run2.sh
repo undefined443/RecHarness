@@ -117,8 +117,12 @@ WORKSPACE="./workspace/${RUN_ID}/${COLD_START}"
 mkdir -p "${TRAINVAL_DIR}" "${TEST_DIR}" "${LOGS_DIR}" "${RESULTS_DIR}" "${WORKSPACE}"
 
 DATASETS=("Movies_and_TV" "Industrial_and_Scientific" "Electronics" "CDs_and_Vinyl")
-PYTHON=$(command -v python3 || command -v python || die "python3 was not found")
 PROJ_ROOT="$(cd "$(dirname "$0")" && pwd)"
+if [[ -x "${PROJ_ROOT}/.venv/bin/python3" ]]; then
+    PYTHON="${PROJ_ROOT}/.venv/bin/python3"
+else
+    PYTHON=$(command -v python3 || command -v python || die "python3 was not found")
+fi
 
 # ══════════════════════════════════════════════════════════════════════
 log_head "===== Step 1/4: Environment check ====="
@@ -140,7 +144,7 @@ $PYTHON -c "import torch" 2>/dev/null || die "PyTorch is not installed"
 $PYTHON -c "import langsmith" 2>/dev/null || { uv pip install langsmith -q; }
 $PYTHON -c "import langchain_openai" 2>/dev/null || { uv pip install langchain-openai -q; }
 
-GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l || echo 0)
+GPU_COUNT=$( (nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true) | wc -l | tr -d ' ')
 if [[ "$GPU_COUNT" -eq 0 ]]; then
     log_warn "No GPU was detected; running in CPU mode"
     GPU_IDS_PY="[]"

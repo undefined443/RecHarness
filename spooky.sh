@@ -93,8 +93,12 @@ AGENT_LOG="${LOGS_DIR}/agent.log"
 
 mkdir -p "${LOGS_DIR}" "${RESULTS_DIR}" "${WORKSPACE}"
 
-PYTHON=$(command -v python3 || command -v python || die "python3 was not found")
 PROJ_ROOT="$(cd "$(dirname "$0")" && pwd)"
+if [[ -x "${PROJ_ROOT}/.venv/bin/python3" ]]; then
+    PYTHON="${PROJ_ROOT}/.venv/bin/python3"
+else
+    PYTHON=$(command -v python3 || command -v python || die "python3 was not found")
+fi
 
 # ══════════════════════════════════════════════════════════════════════
 log_head "===== Step 1/3: Environment check ====="
@@ -142,7 +146,7 @@ $PYTHON -c "import langchain_openai" 2>/dev/null || { uv pip install langchain-o
 # Detect GPUs (optional for this benchmark -- TF-IDF+MLP trials are lightweight
 # CPU-friendly workloads, but trial parallelism still follows GPU/CPU slot
 # scheduling shared with the other benchmarks).
-GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l || echo 0)
+GPU_COUNT=$( (nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || true) | wc -l | tr -d ' ')
 if [[ "$GPU_COUNT" -eq 0 ]]; then
     log_warn "No GPU was detected; running in CPU mode"
     GPU_IDS_PY="[]"
