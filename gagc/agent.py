@@ -89,7 +89,11 @@ Do not use α/β values to rank arms in this mode; they are retained only for lo
 
 def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url: str | None):
     """Construct the LangChain chat model for the given provider."""
-    max_tokens = int(os.environ.get("GAGC_LLM_MAX_TOKENS", "4096"))
+    # GLM-5.2 (the default VolcEngine model) is a reasoning model whose reasoning_content
+    # can consume most of a small max_tokens budget, truncating the actual tool-call/answer
+    # content to empty and silently ending the agent loop mid-round. Verified via a local
+    # smoke test: 4096 reproduced this after 1-3 rounds; 16000 did not.
+    max_tokens = int(os.environ.get("GAGC_LLM_MAX_TOKENS", "16000"))
     if llm_provider == "volcengine":
         # VolcEngine Ark is OpenAI-compatible — use ChatOpenAI, not ChatAnthropic.
         from langchain_openai import ChatOpenAI
