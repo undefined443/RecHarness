@@ -32,7 +32,7 @@ import sqlite3
 import sys
 from typing import Any
 
-from gagc.prompts import GAGC_ORCHESTRATOR_PROMPT, GR_ORCHESTRATOR_PROMPT
+from gagc.prompts import GAGC_ORCHESTRATOR_PROMPT, GR_ORCHESTRATOR_PROMPT, SPOOKY_ORCHESTRATOR_PROMPT
 from gagc.templates import get_template_dir
 from gagc.tools import (
     ServerConfig,
@@ -616,6 +616,180 @@ def create_gr_agent(
         StateBackend,
         StoreBackend,
     )
+    model = _build_model(llm_provider, model_id, api_key, base_url)
+    store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
+    _tools_module._STORE = store
+
+    from gagc.state import ThompsonState, ArmState
+    from gagc.tools import _active_arms
+    default_state = ThompsonState(
+        arms={arm: ArmState(name=arm) for arm in _active_arms()},
+        global_budget=global_budget_secs,
+        score_history=[],
+        rejected_dims_buffer=[],
+        skill_notes="Cold start: no prior knowledge.",
+        pending_queue=[],
+        experiment_skill=default_experiment_skill_for_policy(),
+    )
+    _seed_thompson_state(store, default_state)
+
+    backend = CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/workspace/":    LocalShellBackend(root_dir=abs_workspace, virtual_mode=True),
+            "/thompson_state/":  StoreBackend(namespace=lambda _rt: ("gagc", "thompson")),
+            "/logs/":         FilesystemBackend(root_dir=abs_logs_root, virtual_mode=True),
+        },
+    )
+
+    agent = create_deep_agent(
+        model=model,
+        tools=[
+            propose_action_group,
+            execute_trial_group,
+            execute_trial,
+            promote_winner,
+            update_thompson_state,
+            evaluate_final_incumbent,
+        ],
+        backend=backend,
+        store=store,
+        checkpointer=_build_checkpointer(abs_logs_root, checkpoint_path, enable_persistent_checkpoint),
+        system_prompt=system_prompt,
+    )
+
+    return agent
+
+
+def create_spooky_agent(
+    # ── LLM ─────────────────────────────────────────────────────────
+    llm_provider: str = "volcengine",
+    model_id: str = _VOLCENGINE_MODEL,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    # ── Task ────────────────────────────────────────────────────────
+    train_data: str = "./input/spooky_author/train.csv",
+    val_data: str | None = None,
+    test_data: str = "./input/spooky_author/test.csv",
+    private_test_data: str | None = None,
+    cold_start: str = "spooky_mlp",
+    # ── Infrastructure ──────────────────────────────────────────────
+    workspace_root: str = "./workspace",
+    logs_root: str = "./logs",
+    global_budget_secs: float = 43200.0,
+    num_gpus: int = 8,
+    num_cpus: int = 128,
+    gpu_ids: list[int] | None = None,
+    use_thompson_sampling: bool = True,
+    basin_transfer_rho: float | None = None,
+    enable_persistent_checkpoint: bool = True,
+    checkpoint_path: str | None = None,
+    thompson_state_path: str | None = None,
+):
+    """Build and return the RecHarness orchestrator for MLE-Bench Lite
+    spooky-author-identification (3-class text classification).
+
+    Args:
+        llm_provider: 'volcengine' (default) | 'anthropic'.
+        model_id: Model name.
+        train_data: Path to train.csv (produced by prepare_spooky_data.py).
+        val_data: Path to val.csv used during search. Defaults to
+            GAGC_SPOOKY_VAL_DATA, then a val.csv sibling of train_data.
+        test_data: Path to test.csv (unlabeled) used only by final evaluation.
+        private_test_data: Path to private_test.csv (answer key) used only by
+            final evaluation. Defaults to GAGC_SPOOKY_PRIVATE_TEST, then a
+            private_test.csv sibling of train_data.
+        cold_start: Template name: 'spooky_mlp' (TF-IDF + MLP baseline).
+        workspace_root: Root for training scripts.
+        logs_root: Directory for per-iteration JSON logs.
+        global_budget_secs: Total compute-time budget.
+        num_gpus: GPU devices available (not required for this benchmark; used
+            only for trial-slot scheduling).
+        num_cpus: CPU cores available.
+        gpu_ids: Explicit GPU IDs to use (defaults to range(num_gpus)).
+        use_thompson_sampling: If False, run the textual-gradient ablation.
+        basin_transfer_rho: Optional one-time posterior transfer coefficient
+            used when a successful basin jump creates a new local Thompson basin.
+        enable_persistent_checkpoint: Persist LangGraph checkpoints and Thompson
+            state under logs_root so the same thread_id can resume after restart.
+        checkpoint_path: Optional SQLite checkpoint DB path. Defaults to
+            logs_root/langgraph_checkpoints.sqlite. Set to "memory" to disable.
+        thompson_state_path: Optional Thompson state JSON path. Defaults to
+            logs_root/thompson_state.json. Set to "memory" to disable.
+
+    Usage:
+        from gagc.agent import create_spooky_agent
+        agent = create_spooky_agent(
+            train_data="./input/spooky_author/train.csv",
+            test_data="./input/spooky_author/test.csv",
+            workspace_root="./workspace_spooky",
+        )
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": "Minimize log loss on spooky-author-identification."}]},
+            config={"configurable": {"thread_id": "spooky-run-001"}},
+        )
+    """
+    # Switch benchmark mode to spooky_author BEFORE init_workspace / pre-seed
+    _tools_module._BENCHMARK_MODE = "spooky_author"
+    _tools_module._SPOOKY_TRAIN_DATA = os.path.abspath(train_data)
+    default_val = os.path.join(os.path.dirname(os.path.abspath(train_data)), "val.csv")
+    _tools_module._SPOOKY_VAL_DATA = os.path.abspath(
+        val_data or os.environ.get("GAGC_SPOOKY_VAL_DATA") or default_val
+    )
+    _tools_module._SPOOKY_TEST_DATA = os.path.abspath(test_data)
+    default_private_test = os.path.join(
+        os.path.dirname(os.path.abspath(train_data)), "private_test.csv"
+    )
+    _tools_module._SPOOKY_PRIVATE_TEST = os.path.abspath(
+        private_test_data or os.environ.get("GAGC_SPOOKY_PRIVATE_TEST") or default_private_test
+    )
+    _tools_module._ROUTING_POLICY = "thompson" if use_thompson_sampling else "textual_gradient"
+    os.environ["GAGC_COLD_START"] = cold_start
+    if basin_transfer_rho is not None:
+        _tools_module.BASIN_TRANSFER_RHO = min(1.0, max(0.0, float(basin_transfer_rho)))
+
+    _tools_module._SERVER_CONFIG = ServerConfig(
+        num_gpus=num_gpus,
+        num_cpus=num_cpus,
+        cpus_per_trial=num_cpus // max(num_gpus, 1),
+        gpu_ids=gpu_ids or [],
+    )
+    _tools_module._LOGS_ROOT = os.path.abspath(logs_root)
+    _tools_module._WORKSPACE_ROOT = os.path.abspath(workspace_root)
+
+    os.makedirs(logs_root, exist_ok=True)
+    _init_workspace(workspace_root, cold_start)
+
+    abs_workspace = os.path.abspath(workspace_root)
+    abs_logs_root = os.path.abspath(logs_root)
+
+    system_prompt = (
+        SPOOKY_ORCHESTRATOR_PROMPT
+        + f"\n\n# Runtime context\n"
+        f"## Virtual paths\n"
+        f"- /workspace/best.py          — spooky-author-identification training script (RecHarness evolves this)\n"
+        f"- /thompson_state/state.json  — Thompson Sampling + SkillOpt memory state\n"
+        f"- /logs/iteration_<N>.json    — per-iteration logs\n"
+        f"\n## Real paths\n"
+        f"- trial-tool script_path      : {abs_workspace}/best.py\n"
+        f"- git diff workspace path     : {abs_workspace}\n"
+        f"  (use: bash(\"cd {abs_workspace} && git diff best.py\") to generate code_diff)\n"
+        f"\n## Data\n"
+        f"- SPOOKY_TRAIN_DATA  : {_tools_module._SPOOKY_TRAIN_DATA}\n"
+        f"- SPOOKY_VAL_DATA    : {_tools_module._SPOOKY_VAL_DATA} (used during search)\n"
+        f"- test data          : {_tools_module._SPOOKY_TEST_DATA} (held out until evaluate_final_incumbent)\n"
+        f"- private answers    : {_tools_module._SPOOKY_PRIVATE_TEST} (held out until evaluate_final_incumbent)\n"
+        f"- cold_start         : {cold_start}\n"
+        f"\n## Budget\n"
+        f"- global_budget : {global_budget_secs}s\n"
+        f"- num_gpus      : {num_gpus} (not required for this CPU-friendly benchmark)\n"
+        f"- gpu_ids       : {gpu_ids or list(range(num_gpus))}\n"
+        f"\nRULE: read_file/write_file/ls MUST use virtual paths (/workspace/, /thompson_state/, /logs/).\n"
+        f"NEVER pass a real absolute path to read_file. Use the real trial-tool script_path above for execute_trial, execute_trial_group, promote_winner, and evaluate_final_incumbent.\n"
+    )
+    if not use_thompson_sampling:
+        system_prompt += TEXTUAL_GRADIENT_ROUTING_PROMPT
+
     model = _build_model(llm_provider, model_id, api_key, base_url)
     store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
     _tools_module._STORE = store

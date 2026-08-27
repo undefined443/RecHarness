@@ -22,6 +22,9 @@ from gagc.grpo import (
     GR_MUTEX_GROUPS,
     JUMPING_DIMS,
     MUTEX_GROUPS,
+    SPOOKY_COMPOSITE_ARMS,
+    SPOOKY_JUMPING_DIMS,
+    SPOOKY_MUTEX_GROUPS,
     compute_group_advantages,
     thompson_sample,
 )
@@ -60,6 +63,10 @@ _BENCHMARK_MODE: str = "amazon_reviews"
 _GR_TRAIN_DATA: str = ""
 _GR_VAL_DATA: str = ""
 _GR_TEST_DATA: str = ""
+_SPOOKY_TRAIN_DATA: str = ""
+_SPOOKY_VAL_DATA: str = ""
+_SPOOKY_TEST_DATA: str = ""
+_SPOOKY_PRIVATE_TEST: str = ""
 _SELECTION_METRIC: str = "val_score"
 
 # ---------------------------------------------------------------------------
@@ -389,7 +396,7 @@ def _contract_check_trial_files(train_path: str, predict_path: str) -> str | Non
     if missing_train:
         return f"train.py contract check failed: missing top-level definitions {missing_train}"
 
-    if _BENCHMARK_MODE == "amazon_reviews" and os.path.exists(predict_path):
+    if _BENCHMARK_MODE in ("amazon_reviews", "spooky_author") and os.path.exists(predict_path):
         predict_names, err = _python_defined_names(predict_path)
         if err:
             return f"predict.py contract check failed: {err}"
@@ -424,6 +431,11 @@ def _trial_runtime_env(slot_id: int) -> tuple[dict[str, str], list[int]]:
         if eval_data:
             env["GR_TEST_DATA"] = eval_data
         env.setdefault("GR_NUM_EPOCHS", "2")
+    elif _BENCHMARK_MODE == "spooky_author":
+        if _SPOOKY_TRAIN_DATA:
+            env["SPOOKY_TRAIN_DATA"] = _SPOOKY_TRAIN_DATA
+        if _SPOOKY_VAL_DATA:
+            env["SPOOKY_VAL_DATA"] = _SPOOKY_VAL_DATA
     elif _BENCHMARK_MODE == "amazon_reviews":
         env.setdefault("SASREC_EPOCHS", "200")
         env.setdefault("GRU4REC_EPOCHS", "200")
@@ -466,6 +478,23 @@ def _claude_code_backend_fields_for_arm(arm: str) -> dict[str, Any]:
                 "model/transformer.py",
                 "model/encoder.py",
             ],
+            "claude_attempts": 3,
+        }
+
+    if _BENCHMARK_MODE == "spooky_author":
+        if arm != "change_architecture":
+            return {}
+        return {
+            "implementation_backend": "claude_code",
+            "implementation_prompt": (
+                "Implement one spooky-author-identification classifier architecture jump. Prefer changing the "
+                "MLP depth/width (SpookyClassifier) or swapping the TF-IDF+MLP head for a different architecture "
+                "over the same TF-IDF features (for example a 1D-CNN), while preserving the train.py/predict.py "
+                "checkpoint contract (model_state_dict, vectorizer, input_dim), the forward(x) -> (N, 3) logits "
+                "contract, and the stdout LOGLOSS=<value> printing contract. This jump is allowed to underperform "
+                "before retuning; focus on a correct runnable new basin."
+            ),
+            "allowed_files": ["train.py", "predict.py"],
             "claude_attempts": 3,
         }
 
@@ -1005,6 +1034,52 @@ _GR_EXPLOITING_ARMS: list[str] = [a for a in _GR_ALL_ARMS if a not in GR_JUMPING
 
 # ---------------------------------------------------------------------------
 
+_SPOOKY_DIMENSION_HINTS: dict[str, str] = {
+    "tune_lr":               "Change LR in train.py. delta > 0 means increase, < 0 means decrease.",
+    "tune_batch_size":       "Change BATCH_SIZE in train.py. delta > 0 means larger batch, < 0 means smaller.",
+    "tune_weight_decay":     "Change WEIGHT_DECAY in train.py. delta > 0 means stronger L2, < 0 means weaker.",
+    "add_lr_scheduler":      "Add or change the LR scheduler in train.py (warmup + cosine / step decay / cyclic).",
+    "tune_hidden_dim":       "Change HIDDEN_DIM (MLP width) in train.py. delta > 0 means wider model, < 0 means narrower.",
+    "tune_dropout":          "Change DROPOUT in train.py. delta > 0 means more regularisation, < 0 means less.",
+    "tune_ngram_range":      "Change NGRAM_RANGE for the TF-IDF vectorizer in train.py. delta > 0 means including longer n-grams, < 0 means shorter/unigrams only.",
+    "tune_max_features":     "Change MAX_FEATURES / MIN_DF / MAX_DF for the TF-IDF vectorizer in train.py. delta > 0 means a larger vocabulary, < 0 means a smaller, more selective one.",
+    "change_architecture":   "Change the classifier architecture (for example: MLP depth/width, or swap the TF-IDF+MLP head for a 1D-CNN over the same features). This is a high-risk architecture jumping arm that must retune for several rounds before judging.",
+    "tune_optimizer_schedule":"Jointly tune LR, batch size, and scheduler because optimizer stability is coupled.",
+    "tune_vectorizer":       "Jointly tune n-gram range and vocabulary size because they define the TF-IDF feature space.",
+    "tune_capacity_regularization":"Jointly tune HIDDEN_DIM and DROPOUT because model capacity and regularisation are coupled.",
+}
+
+_SPOOKY_ALL_DIMENSIONS: list[str] = list(_SPOOKY_DIMENSION_HINTS.keys())
+
+# spooky_author arms = composite arms plus standalone dims that are not subsumed.
+_SPOOKY_SUBSUMED_DIMS: set[str] = {
+    dim for dims in SPOOKY_COMPOSITE_ARMS.values() for dim in dims
+}
+_SPOOKY_ALL_ARMS: list[str] = list(SPOOKY_COMPOSITE_ARMS.keys()) + [
+    dim for dim in _SPOOKY_ALL_DIMENSIONS
+    if dim not in _SPOOKY_SUBSUMED_DIMS and dim not in SPOOKY_COMPOSITE_ARMS
+]
+_SPOOKY_EXPLOITING_ARMS: list[str] = [a for a in _SPOOKY_ALL_ARMS if a not in SPOOKY_JUMPING_DIMS]
+
+_SPOOKY_DIAG_RULES: list[tuple[str, str, str]] = [
+    ("nan",              "tune_lr",             "NaN detected — LR likely too high, decrease LR"),
+    ("inf",              "tune_lr",             "Inf gradient — decrease LR to stabilise training"),
+    ("out of memory",    "tune_batch_size",     "OOM — reduce BATCH_SIZE"),
+    ("out of memory",    "tune_hidden_dim",     "OOM — reduce HIDDEN_DIM"),
+    ("out of memory",    "tune_max_features",   "OOM — reduce TF-IDF MAX_FEATURES"),
+    ("overfit",          "tune_dropout",        "Overfitting — increase DROPOUT"),
+    ("overfit",          "tune_weight_decay",   "Overfitting — increase weight decay"),
+    ("val.*lower.*train", "tune_dropout",       "Train/val gap — increase dropout to reduce overfitting"),
+    ("not.*decreas",     "add_lr_scheduler",    "Loss plateau — add warmup + cosine scheduler"),
+    ("plateau",          "add_lr_scheduler",    "Loss plateau — add warmup + cosine scheduler"),
+    ("slow.*converg",    "tune_lr",             "Slow convergence — try increasing LR"),
+    ("oscillat",         "tune_lr",             "Loss oscillating — decrease LR for stability"),
+    ("underfit",         "tune_hidden_dim",     "Underfitting — increase HIDDEN_DIM"),
+    ("underfit",         "tune_max_features",   "Underfitting — increase TF-IDF vocabulary size"),
+]
+
+# ---------------------------------------------------------------------------
+
 _DIAG_RULES: list[tuple[str, str, str]] = [
     ("nan",              "tune_lr",             "NaN detected — LR likely too high, decrease LR"),
     ("nan",              "change_loss_function", "NaN detected — BCE numerically unstable, switch to BPR or sampled softmax"),
@@ -1055,11 +1130,19 @@ _GR_DIAG_RULES: list[tuple[str, str, str]] = [
 
 
 def _active_arms() -> list[str]:
-    return _GR_ALL_ARMS if _BENCHMARK_MODE == "kuairec" else _ALL_ARMS
+    if _BENCHMARK_MODE == "kuairec":
+        return _GR_ALL_ARMS
+    if _BENCHMARK_MODE == "spooky_author":
+        return _SPOOKY_ALL_ARMS
+    return _ALL_ARMS
 
 
 def _active_exploiting_arms() -> list[str]:
-    return _GR_EXPLOITING_ARMS if _BENCHMARK_MODE == "kuairec" else _EXPLOITING_ARMS
+    if _BENCHMARK_MODE == "kuairec":
+        return _GR_EXPLOITING_ARMS
+    if _BENCHMARK_MODE == "spooky_author":
+        return _SPOOKY_EXPLOITING_ARMS
+    return _EXPLOITING_ARMS
 
 
 def _active_fixed_discovery_arm() -> str | None:
@@ -1070,19 +1153,35 @@ def _active_fixed_discovery_arm() -> str | None:
 
 def _active_dimensions() -> list[str]:
     """Original flat dimension list (for backward compat where needed)."""
-    return _GR_ALL_DIMENSIONS if _BENCHMARK_MODE == "kuairec" else _ALL_DIMENSIONS
+    if _BENCHMARK_MODE == "kuairec":
+        return _GR_ALL_DIMENSIONS
+    if _BENCHMARK_MODE == "spooky_author":
+        return _SPOOKY_ALL_DIMENSIONS
+    return _ALL_DIMENSIONS
 
 
 def _active_dimension_hints() -> dict[str, str]:
-    return _GR_DIMENSION_HINTS if _BENCHMARK_MODE == "kuairec" else _DIMENSION_HINTS
+    if _BENCHMARK_MODE == "kuairec":
+        return _GR_DIMENSION_HINTS
+    if _BENCHMARK_MODE == "spooky_author":
+        return _SPOOKY_DIMENSION_HINTS
+    return _DIMENSION_HINTS
 
 
 def _active_diag_rules() -> list[tuple[str, str, str]]:
-    return _GR_DIAG_RULES if _BENCHMARK_MODE == "kuairec" else _DIAG_RULES
+    if _BENCHMARK_MODE == "kuairec":
+        return _GR_DIAG_RULES
+    if _BENCHMARK_MODE == "spooky_author":
+        return _SPOOKY_DIAG_RULES
+    return _DIAG_RULES
 
 
 def _active_jumping_dims() -> set[str]:
-    return GR_JUMPING_DIMS if _BENCHMARK_MODE == "kuairec" else JUMPING_DIMS
+    if _BENCHMARK_MODE == "kuairec":
+        return GR_JUMPING_DIMS
+    if _BENCHMARK_MODE == "spooky_author":
+        return SPOOKY_JUMPING_DIMS
+    return JUMPING_DIMS
 
 
 def _active_jump_eligible_strategy_arms() -> set[str]:
@@ -1092,11 +1191,19 @@ def _active_jump_eligible_strategy_arms() -> set[str]:
 
 
 def _active_mutex_groups() -> list[set[str]]:
-    return GR_MUTEX_GROUPS if _BENCHMARK_MODE == "kuairec" else MUTEX_GROUPS
+    if _BENCHMARK_MODE == "kuairec":
+        return GR_MUTEX_GROUPS
+    if _BENCHMARK_MODE == "spooky_author":
+        return SPOOKY_MUTEX_GROUPS
+    return MUTEX_GROUPS
 
 
 def _active_composite_arms() -> dict[str, list[str]]:
-    return GR_COMPOSITE_ARMS if _BENCHMARK_MODE == "kuairec" else COMPOSITE_ARMS
+    if _BENCHMARK_MODE == "kuairec":
+        return GR_COMPOSITE_ARMS
+    if _BENCHMARK_MODE == "spooky_author":
+        return SPOOKY_COMPOSITE_ARMS
+    return COMPOSITE_ARMS
 
 
 def _expand_arm(arm: str) -> list[str]:
@@ -1130,7 +1237,12 @@ def _is_textual_gradient_policy() -> bool:
 
 
 def _configured_trial_floor_secs() -> float:
-    default = 6400.0 if _BENCHMARK_MODE == "kuairec" else 10800.0
+    if _BENCHMARK_MODE == "kuairec":
+        default = 6400.0
+    elif _BENCHMARK_MODE == "spooky_author":
+        default = 300.0  # TF-IDF+MLP trials are lightweight (CPU, seconds-to-minutes)
+    else:
+        default = 10800.0
     raw = os.getenv("GAGC_TRIAL_SECS", "").strip()
     if not raw:
         return default
@@ -1894,6 +2006,8 @@ def execute_trial(
         if outcome.success:
             if _BENCHMARK_MODE == "kuairec":
                 val_score, convergence_trace, val_metrics = _run_kuairec_eval(stdout)
+            elif _BENCHMARK_MODE == "spooky_author":
+                val_score, convergence_trace, val_metrics = _run_spooky_author_eval(predict_path, stdout)
             else:
                 val_score, convergence_trace, val_metrics = _run_benchmark_eval(predict_path, stdout)
         claude_log_group = str(spec.extra.get("trial_group_id") or "unknown_group")
@@ -2003,6 +2117,9 @@ def execute_trial(
             if _BENCHMARK_MODE == "kuairec":
                 bench_score, convergence_trace, val_metrics = \
                     _run_kuairec_eval(stdout)
+            elif _BENCHMARK_MODE == "spooky_author":
+                bench_score, convergence_trace, val_metrics = \
+                    _run_spooky_author_eval(predict_path, stdout)
             else:
                 predict_script = predict_path
                 bench_score, convergence_trace, val_metrics = \
@@ -2063,6 +2180,36 @@ def _parse_gr_convergence_trace(stdout: str) -> list[float]:
         if m:
             scores.append(float(m.group(1)))
     return scores
+
+
+def _run_spooky_author_eval(
+    predict_script: str, stdout: str
+) -> tuple[float, list[float], dict | None]:
+    convergence_trace = _parse_convergence_trace(stdout)
+    if not os.path.isfile(predict_script):
+        score, trace = _parse_metrics(stdout)
+        return score, trace or convergence_trace, None
+
+    val_score = _CRASH_SCORE
+    val_metrics: dict | None = None
+    try:
+        from gagc.benchmarks.spooky_author.harness import evaluate as spooky_evaluate
+        result = spooky_evaluate(
+            predict_script=predict_script,
+            mode="val",
+            val_file=_SPOOKY_VAL_DATA,
+            verbose=False,
+        )
+        val_score = result.val_score
+        val_metrics = dict(result.metrics)
+        if not convergence_trace:
+            convergence_trace = [val_score]
+    except Exception:
+        score, trace = _parse_metrics(stdout)
+        val_score = score
+        convergence_trace = trace or convergence_trace
+
+    return val_score, convergence_trace, val_metrics
 
 
 def _run_benchmark_eval(
@@ -3536,6 +3683,35 @@ def _kuairec_final_metrics(stdout: str) -> tuple[float | None, dict | None, dict
     return score, {"Kuairec": metrics}, aggregate, None
 
 
+def _spooky_author_final_metrics(
+    predict_script: str,
+) -> tuple[float | None, dict | None, dict | None, str | None]:
+    try:
+        from gagc.benchmarks.spooky_author.harness import evaluate as spooky_evaluate
+        result = spooky_evaluate(
+            predict_script=predict_script,
+            mode="test",
+            test_file=_SPOOKY_TEST_DATA,
+            private_test_file=_SPOOKY_PRIVATE_TEST,
+            verbose=False,
+        )
+        metrics = dict(result.metrics)
+        return result.val_score, {"SpookyAuthor": metrics}, dict(metrics), None
+    except Exception as exc:
+        return None, None, None, str(exc)
+
+
+def _spooky_author_report_metrics(test_metrics: dict | None) -> dict | None:
+    if not isinstance(test_metrics, dict):
+        return None
+    metrics = test_metrics.get("SpookyAuthor") if isinstance(test_metrics.get("SpookyAuthor"), dict) else test_metrics
+    return {
+        "SpookyAuthor": {
+            "log_loss": _metric_float(metrics.get("log_loss"), 0.0),
+        }
+    }
+
+
 def _kuairec_report_metrics(test_metrics: dict | None) -> dict | None:
     if not isinstance(test_metrics, dict):
         return None
@@ -3597,6 +3773,10 @@ def evaluate_final_incumbent(
         if _BENCHMARK_MODE == "kuairec":
             test_score, test_metrics, aggregate_metrics, metric_error = _kuairec_final_metrics(stdout)
             report_metrics = _kuairec_report_metrics(test_metrics)
+            report_table_markdown = None
+        elif _BENCHMARK_MODE == "spooky_author":
+            test_score, test_metrics, aggregate_metrics, metric_error = _spooky_author_final_metrics(predict_path)
+            report_metrics = _spooky_author_report_metrics(test_metrics)
             report_table_markdown = None
         else:
             test_score, test_metrics, aggregate_metrics, metric_error = _amazon_final_metrics(predict_path)

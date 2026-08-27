@@ -20,6 +20,7 @@ hstu_perdataset      : ID-only HSTU-style per-dataset sequential recommender.
 gr        : GR (Generative Regression) on KuaiRec watch-time prediction.
 d2q       : Duration-Deconfounded Quantile baseline for KuaiRec.
 tpm       : Tree Progressive Model baseline for KuaiRec.
+spooky_mlp: TF-IDF + MLP baseline for MLE-Bench Lite spooky-author-identification.
 """
 from __future__ import annotations
 
@@ -41,6 +42,7 @@ TEMPLATES: dict[str, str] = {
     "bert4rec_perdataset": "bert4rec_perdataset",
     "nextitnet_perdataset": "nextitnet_perdataset",
     "hstu_perdataset": "hstu_perdataset",
+    "spooky_mlp": "spooky_mlp",
 }
 
 _HERE = os.path.dirname(__file__)

@@ -15,6 +15,7 @@ This Repo contains the source code, experiment entrypoints, model templates, ben
 - `run2.sh`: Amazon Reviews sequential-recommendation experiment entrypoint.
 - `gr.sh`: KuaiRec watch-time/ranking experiment entrypoint.
 - `prepare_gr_data.py`: local KuaiRec preprocessing utility.
+- `prepare_spooky_data.py`: local Spooky Author Identification preprocessing utility.
 - `gagc/data_preprocess.py`: local Amazon Reviews preprocessing utility.
 - `gagc/agent.py`: Amazon and KuaiRec agent factories.
 - `gagc/tools.py`: proposal, isolated execution, promotion, state update, and final evaluation tools.
@@ -114,6 +115,24 @@ uv run prepare_gr_data.py \
 
 The command writes `train_data.npy` and `test_data.npy`.
 
+### MLE-Bench Lite: Spooky Author Identification
+
+Only needed to download the raw Kaggle competition data — `kaggle` is not a runtime dependency of the search loop itself:
+
+```bash
+uv sync --extra mlebench
+```
+
+You need `~/.kaggle/kaggle.json` configured, and to have accepted the competition rules at [Kaggle](https://www.kaggle.com/c/spooky-author-identification/rules). Then prepare the local train/val/test splits (two-layer split matching MLE-Bench Lite's own protocol — see `prepare_spooky_data.py` for details):
+
+```bash
+uv run prepare_spooky_data.py \
+  --raw-dir /path/to/kaggle_download \
+  --output-dir ./input/spooky_author
+```
+
+The command writes `train.csv`, `val.csv`, `test.csv`, and `private_test.csv` (the held-out answer key — never read during search, only by `evaluate_final_incumbent`) under `./input/spooky_author`.
+
 ## Main Experiments
 
 ### Amazon Sequential Recommendation
@@ -154,6 +173,27 @@ bash gr.sh \
 The registered KuaiRec cold starts are `gr`, `d2q`, `ks_d2q`, and `tpm`.
 
 Both scripts support `--help`.
+
+### MLE-Bench Lite: Spooky Author Identification
+
+There is no shell entrypoint for this benchmark yet — invoke the agent factory directly:
+
+```python
+from gagc.agent import create_spooky_agent
+
+agent = create_spooky_agent(
+    train_data="./input/spooky_author/train.csv",
+    test_data="./input/spooky_author/test.csv",
+    workspace_root="./workspace_spooky",
+    global_budget_secs=43200,
+)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "Minimize log loss on spooky-author-identification."}]},
+    config={"configurable": {"thread_id": "spooky-run-001"}},
+)
+```
+
+The only registered cold start is `spooky_mlp` (TF-IDF + a small MLP). This benchmark is CPU-friendly — GPU is used automatically when available but is not required.
 
 ## Search Protocol
 

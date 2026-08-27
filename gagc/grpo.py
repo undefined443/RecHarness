@@ -52,6 +52,23 @@ GR_JUMPING_DIMS: set[str] = {"change_decoder_backbone"}
 
 
 # ---------------------------------------------------------------------------
+# Arm coupling definitions (Spooky Author Identification / MLE-Bench Lite)
+# ---------------------------------------------------------------------------
+
+SPOOKY_COMPOSITE_ARMS: dict[str, list[str]] = {
+    "tune_optimizer_schedule": ["tune_lr", "tune_batch_size", "add_lr_scheduler"],
+    "tune_vectorizer": ["tune_ngram_range", "tune_max_features"],
+    "tune_capacity_regularization": ["tune_hidden_dim", "tune_dropout"],
+}
+
+SPOOKY_MUTEX_GROUPS: list[set[str]] = [
+    {"change_architecture", "tune_hidden_dim", "tune_dropout"},
+]
+
+SPOOKY_JUMPING_DIMS: set[str] = {"change_architecture"}
+
+
+# ---------------------------------------------------------------------------
 # Thompson Sampling
 # ---------------------------------------------------------------------------
 
