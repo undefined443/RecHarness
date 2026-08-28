@@ -3,10 +3,11 @@
 Runs the vendored `prepare.py` (frozen evaluation pipeline) as a subprocess
 inside a trial's isolated workspace, then feeds its output through the
 vendored `decision.py` for the keep/revert call. `prepare.py` resolves its
-own `config.yaml` relative to its own file location (`PROJECT_DIR`), so it
-must be invoked as a subprocess with `cwd=workspace_dir` -- importing and
-calling it in-process would resolve `PROJECT_DIR` to the vendored copy under
-`gagc/benchmarks/diversity_v3/vendor/`, not the trial's mutated config.
+own `config.yaml` via `Path(__file__).resolve().parent` -- that is the
+directory of the *script file being executed*, independent of the process's
+cwd. So a copy of `prepare.py` must physically exist in `workspace_dir` and
+be the one invoked (not the vendored original), or every trial would read
+the vendored copy's own config.yaml instead of the trial's mutated one.
 
 `config.yaml`'s `data.sample_path` / `data.vec_path` are expected to be
 absolute paths (see `gagc/agent.py`'s diversity agent factory) pointing at a
@@ -16,13 +17,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _VENDOR_DIR = os.path.join(_HERE, "vendor")
-_PREPARE_PY = os.path.join(_VENDOR_DIR, "prepare.py")
+_VENDOR_PREPARE_PY = os.path.join(_VENDOR_DIR, "prepare.py")
 
 
 @dataclass
@@ -61,9 +63,13 @@ def evaluate(
     """Run prepare.py in `workspace_dir` (must contain config.yaml + train.py) and
     return flattened metrics. Does not apply keep/revert -- see `decide_keep`.
     """
+    local_prepare_py = os.path.join(workspace_dir, "prepare.py")
+    if not os.path.isfile(local_prepare_py):
+        shutil.copy2(_VENDOR_PREPARE_PY, local_prepare_py)
+
     output_path = os.path.join(workspace_dir, "eval_results.json")
     cmd = [
-        sys.executable, _PREPARE_PY,
+        sys.executable, local_prepare_py,
         "--output", "eval_results.json",
         "--workers", str(num_workers),
     ]
