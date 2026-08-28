@@ -45,8 +45,14 @@ Configure the LLM provider through environment variables. Secrets are never stor
 
 ```bash
 cp .env.example .env
-export VOLCENGINE_API_KEY=<your-key>
+export OPENAI_API_KEY=<your-key>
+export OPENAI_BASE_URL=<your-gateway-url>   # only needed for a non-default gateway
 ```
+
+The default provider (`llm_provider="openai"`, `model_id="glm_52_fp8"`) talks to any
+OpenAI-compatible gateway via `OPENAI_API_KEY`/`OPENAI_BASE_URL` (`langchain_openai.ChatOpenAI`'s
+own env vars). Pass `llm_provider="volcengine"` to talk to VolcEngine Ark directly instead
+(`VOLCENGINE_API_KEY`/`ARK_API_KEY`), or `llm_provider="anthropic"` for Claude (`ANTHROPIC_API_KEY`).
 
 Tracing is optional and is disabled when its API key is absent.
 

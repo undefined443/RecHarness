@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """RecHarness main orchestrator agent.
 
-Usage (VolcEngine GLM — default):
+Usage (company OpenAI-compatible gateway, GLM-5.2 — default):
     from gagc.agent import create_gagc_agent
 
     agent = create_gagc_agent(
@@ -21,6 +21,13 @@ Usage (Claude, override):
     agent = create_gagc_agent(
         llm_provider="anthropic",
         model_id="claude-sonnet-4-6",
+        ...
+    )
+
+Usage (VolcEngine Ark directly, override):
+    agent = create_gagc_agent(
+        llm_provider="volcengine",
+        model_id="glm-5-2-260617",
         ...
     )
 """
@@ -56,6 +63,11 @@ from gagc.tools import (
 _VOLCENGINE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 _VOLCENGINE_MODEL    = "glm-5-2-260617"
 
+# Default provider: the company's own OpenAI-compatible gateway. Configured via
+# the standard OPENAI_API_KEY / OPENAI_BASE_URL env vars (langchain_openai.ChatOpenAI
+# reads these natively), not hardcoded here.
+_OPENAI_GATEWAY_MODEL = "glm_52_fp8"
+
 
 def _resolve_volcengine_api_key(api_key: str | None) -> str:
     """Resolve the VolcEngine API key from the argument or environment.
@@ -89,12 +101,24 @@ Do not use α/β values to rank arms in this mode; they are retained only for lo
 
 def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url: str | None):
     """Construct the LangChain chat model for the given provider."""
-    # GLM-5.2 (the default VolcEngine model) is a reasoning model whose reasoning_content
-    # can consume most of a small max_tokens budget, truncating the actual tool-call/answer
-    # content to empty and silently ending the agent loop mid-round. Verified via a local
-    # smoke test: 4096 reproduced this after 1-3 rounds; 16000 did not.
+    # GLM-5.2 (the default model, on both the OpenAI-compatible gateway and VolcEngine)
+    # is a reasoning model whose reasoning_content can consume most of a small max_tokens
+    # budget, truncating the actual tool-call/answer content to empty and silently ending
+    # the agent loop mid-round. Verified via a local smoke test: 4096 reproduced this
+    # after 1-3 rounds; 16000 did not.
     max_tokens = int(os.environ.get("GAGC_LLM_MAX_TOKENS", "16000"))
-    if llm_provider == "volcengine":
+    if llm_provider == "openai":
+        # Company's own OpenAI-compatible gateway. api_key/base_url fall back to the
+        # standard OPENAI_API_KEY / OPENAI_BASE_URL env vars (ChatOpenAI's own defaults)
+        # when not passed explicitly -- nothing gateway-specific is hardcoded here.
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=model_id,
+            api_key=api_key or os.environ.get("OPENAI_API_KEY"),
+            base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
+            max_tokens=max_tokens,
+        )
+    elif llm_provider == "volcengine":
         # VolcEngine Ark is OpenAI-compatible — use ChatOpenAI, not ChatAnthropic.
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
@@ -282,8 +306,8 @@ def _seed_thompson_state(store: Any, default_state: Any) -> None:
 
 def create_gagc_agent(
     # ── LLM ─────────────────────────────────────────────────────────
-    llm_provider: str = "volcengine",
-    model_id: str = _VOLCENGINE_MODEL,
+    llm_provider: str = "openai",
+    model_id: str = _OPENAI_GATEWAY_MODEL,
     api_key: str | None = None,
     base_url: str | None = None,
     # ── Task ────────────────────────────────────────────────────────
@@ -306,10 +330,13 @@ def create_gagc_agent(
     """Build and return the RecHarness orchestrator as a compiled deep agent.
 
     Args:
-        llm_provider: 'volcengine' (default, GLM-5.1) | 'anthropic' | any deepagents provider string.
-        model_id: Model name. Default 'glm-5-2-260617' for VolcEngine.
-        api_key: API key. For VolcEngine, read from VOLCENGINE_API_KEY env var if not passed.
-        base_url: Override base URL. VolcEngine URL is bundled as default.
+        llm_provider: 'openai' (default, company gateway) | 'volcengine' | 'anthropic' | any
+            deepagents provider string.
+        model_id: Model name. Default 'glm_52_fp8' for the 'openai' gateway provider.
+        api_key: API key. For 'openai', read from OPENAI_API_KEY env var if not passed.
+            For 'volcengine', read from VOLCENGINE_API_KEY env var if not passed.
+        base_url: Override base URL. For 'openai', read from OPENAI_BASE_URL env var if
+            not passed. For 'volcengine', the Ark URL is bundled as default.
         data_dir: Directory with *_train.txt and *_valid.txt files.
         test_dir: Directory with *_test.txt files (defaults to data_dir).
         cold_start: Template name — 'popular' | 'sasrec' | 'gru4rec' | 'bert4rec'.
@@ -488,8 +515,8 @@ def create_gagc_agent(
 
 def create_gr_agent(
     # ── LLM ─────────────────────────────────────────────────────────
-    llm_provider: str = "volcengine",
-    model_id: str = _VOLCENGINE_MODEL,
+    llm_provider: str = "openai",
+    model_id: str = _OPENAI_GATEWAY_MODEL,
     api_key: str | None = None,
     base_url: str | None = None,
     # ── Task ────────────────────────────────────────────────────────
@@ -513,7 +540,7 @@ def create_gr_agent(
     """Build and return the RecHarness GR orchestrator for KuaiRec watch-time prediction.
 
     Args:
-        llm_provider: 'volcengine' (default) | 'anthropic'.
+        llm_provider: 'openai' (default, company gateway) | 'volcengine' | 'anthropic'.
         model_id: Model name.
         train_data: Path to train .npy file.
         val_data: Path to validation .npy file used during search. Defaults to
@@ -675,8 +702,8 @@ def create_gr_agent(
 
 def create_spooky_agent(
     # ── LLM ─────────────────────────────────────────────────────────
-    llm_provider: str = "volcengine",
-    model_id: str = _VOLCENGINE_MODEL,
+    llm_provider: str = "openai",
+    model_id: str = _OPENAI_GATEWAY_MODEL,
     api_key: str | None = None,
     base_url: str | None = None,
     # ── Task ────────────────────────────────────────────────────────
@@ -702,7 +729,7 @@ def create_spooky_agent(
     spooky-author-identification (3-class text classification).
 
     Args:
-        llm_provider: 'volcengine' (default) | 'anthropic'.
+        llm_provider: 'openai' (default, company gateway) | 'volcengine' | 'anthropic'.
         model_id: Model name.
         train_data: Path to train.csv (produced by prepare_spooky_data.py).
         val_data: Path to val.csv used during search. Defaults to

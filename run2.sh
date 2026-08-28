@@ -7,7 +7,8 @@
 # The default cold-start template trains one model per dataset.
 # Each iteration proposes four hypotheses and executes them in parallel.
 #
-# VOLCENGINE_API_KEY must be provided through the environment.
+# OPENAI_API_KEY (and OPENAI_BASE_URL, for the company's OpenAI-compatible gateway)
+# must be provided through the environment.
 # LangSmith tracing is optional and disabled when LANGSMITH_API_KEY is empty.
 # =============================================================================
 set -euo pipefail
@@ -132,8 +133,8 @@ log_info "Python: $($PYTHON --version)"
 log_info "Project root: ${PROJ_ROOT}"
 
 # Check LLM credentials.
-[[ -n "${VOLCENGINE_API_KEY:-${ARK_API_KEY:-}}" ]] \
-    || die "VOLCENGINE_API_KEY is not set. Export it before running this script."
+[[ -n "${OPENAI_API_KEY:-}" ]] \
+    || die "OPENAI_API_KEY is not set. Export it before running this script."
 
 if ! $PYTHON -c "import gagc" 2>/dev/null; then
     log_info "The legacy-compatible gagc package is not installed; running uv pip install -e ."
@@ -257,8 +258,8 @@ except (AttributeError, OSError):
 from gagc.agent import create_gagc_agent
 
 agent = create_gagc_agent(
-    llm_provider       = "volcengine",
-    model_id           = "glm-5-2-260617",
+    llm_provider       = "openai",
+    model_id           = "glm_52_fp8",
     data_dir           = "${TRAINVAL_DIR}",
     test_dir           = "${TEST_DIR}",
     cold_start         = "${COLD_START}",
