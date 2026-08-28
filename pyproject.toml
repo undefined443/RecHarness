@@ -49,6 +49,13 @@ testpaths = ["tests"]
 # case-by-case basis would add risk without a clear correctness benefit.
 ignore = ["BLE001", "S110"]
 
+[tool.ruff.lint.per-file-ignores]
+# Vendored verbatim from the diversity_v3 source task package (frozen evaluation
+# pipeline / fixed DPP algorithm, never mutated by RecHarness) -- kept as a
+# faithful copy rather than reformatted, so future re-syncs stay a clean diff.
+"gagc/benchmarks/diversity_v3/vendor/*.py" = ["F541", "F841", "PLW0602", "PLW1510", "PLR1730", "I001"]
+"gagc/templates/diversity_dpp/train.py" = ["F541", "F841", "PLW0602", "PLW1510", "PLR1730", "I001"]
+
 [tool.setuptools.packages.find]
 include = ["gagc*"]
 exclude = ["logs*", "input*", "results*", "workspace*", "examples*", "scripts*", "tests*"]

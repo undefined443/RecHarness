@@ -10,4 +10,4 @@ Quick-start:
 from gagc.benchmarks.diversity_v3.harness import EvalResult, decide_keep, evaluate
 from gagc.benchmarks.diversity_v3.task import TASK
 
-__all__ = ["TASK", "EvalResult", "evaluate", "decide_keep"]
+__all__ = ["TASK", "EvalResult", "decide_keep", "evaluate"]

@@ -208,7 +208,23 @@ result = agent.invoke(
 )
 ```
 
-All three scripts support `--help`.
+### diversity_v3: DPP Multi-Window Search Diversity (internal data only)
+
+```bash
+bash diversity.sh \
+  --sample-path ./input/diversity_v3/sample_500.parquet \
+  --vec-path    ./input/diversity_v3/vec_filtered.parquet \
+  --budget 43200
+```
+
+Re-ranks e-commerce search results for diversity using a fixed DPP algorithm
+(`gagc/templates/diversity_dpp/train.py`, never mutated) -- only `config.yaml`'s
+`scatter:` hyperparameters are searched. CPU-only, no `--gpus` flag. The request-log
+and goods-vector datasets are the source task's own proprietary data (not public);
+see `gagc/benchmarks/diversity_v3/vendor/`'s `DATA_DESCRIPTION.md` for the schema and
+how to build the local dev-sample Parquet files from the raw ORC logs.
+
+All four scripts support `--help`.
 
 ## Search Protocol
 
