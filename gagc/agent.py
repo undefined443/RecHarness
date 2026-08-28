@@ -111,12 +111,15 @@ def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url
         # Company's own OpenAI-compatible gateway. api_key/base_url fall back to the
         # standard OPENAI_API_KEY / OPENAI_BASE_URL env vars (ChatOpenAI's own defaults)
         # when not passed explicitly -- nothing gateway-specific is hardcoded here.
+        # Thinking is disabled per team experience: no measurable capability loss on this
+        # gateway's GLM-5.2 deployment, and it avoids burning max_tokens on reasoning_content.
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=model_id,
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
             max_tokens=max_tokens,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     elif llm_provider == "volcengine":
         # VolcEngine Ark is OpenAI-compatible — use ChatOpenAI, not ChatAnthropic.
