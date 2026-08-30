@@ -1642,7 +1642,12 @@ def propose_action_group(
         raw = state_json
 
     if raw and raw.strip() not in ("", "{}"):
-        state = ThompsonState.from_json(raw)
+        try:
+            state = ThompsonState.from_json(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            print(f"[gagc] warning: corrupted Thompson state in store, "
+                  f"falling back to fresh state: {exc}", file=sys.stderr)
+            state = ThompsonState()
     else:
         state = ThompsonState()
 
@@ -2756,7 +2761,12 @@ def update_thompson_state(
         raw = state_json
 
     if raw:
-        state = ThompsonState.from_json(raw)
+        try:
+            state = ThompsonState.from_json(raw)
+        except (json.JSONDecodeError, ValueError) as exc:
+            print(f"[gagc] warning: corrupted Thompson state in store, "
+                  f"falling back to fresh state: {exc}", file=sys.stderr)
+            state = ThompsonState()
     else:
         state = ThompsonState()
 

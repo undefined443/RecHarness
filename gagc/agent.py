@@ -235,6 +235,16 @@ class _PersistentStoreProxy:
             print(f"[gagc] warning: failed to persist Thompson state {self._path}: {exc}", file=sys.stderr)
 
     def put(self, namespace: Any, key: str, value: Any, *args: Any, **kwargs: Any) -> Any:
+        # Reject corrupted JSON writes to the Thompson state namespace
+        if tuple(namespace) == ("gagc", "thompson") and key == "/state.json":
+            content = value.get("content") if isinstance(value, dict) else None
+            if content is not None:
+                try:
+                    json.loads(content)
+                except (json.JSONDecodeError, TypeError) as exc:
+                    print(f"[gagc] warning: rejecting corrupted Thompson state write "
+                          f"(invalid JSON content): {exc}", file=sys.stderr)
+                    return self._inner.get(namespace, key, *args, **kwargs)
         result = self._inner.put(namespace, key, value, *args, **kwargs)
         self._persist(namespace, key, value)
         return result
