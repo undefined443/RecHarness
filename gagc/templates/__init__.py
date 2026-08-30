@@ -21,6 +21,8 @@ gr        : GR (Generative Regression) on KuaiRec watch-time prediction.
 d2q       : Duration-Deconfounded Quantile baseline for KuaiRec.
 tpm       : Tree Progressive Model baseline for KuaiRec.
 spooky_mlp: TF-IDF + MLP baseline for MLE-Bench Lite spooky-author-identification.
+diversity_dpp: Fixed DPP multi-window search diversity re-ranker (diversity_v3);
+               only config.yaml's scatter hyperparameters are mutable, train.py is frozen.
 """
 from __future__ import annotations
 
@@ -43,6 +45,7 @@ TEMPLATES: dict[str, str] = {
     "nextitnet_perdataset": "nextitnet_perdataset",
     "hstu_perdataset": "hstu_perdataset",
     "spooky_mlp": "spooky_mlp",
+    "diversity_dpp": "diversity_dpp",
 }
 
 _HERE = os.path.dirname(__file__)

@@ -41,6 +41,7 @@ from typing import Any
 
 import gagc.tools as _tools_module
 from gagc.prompts import (
+    DIVERSITY_ORCHESTRATOR_PROMPT,
     GAGC_ORCHESTRATOR_PROMPT,
     GR_ORCHESTRATOR_PROMPT,
     SPOOKY_ORCHESTRATOR_PROMPT,
@@ -111,12 +112,15 @@ def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url
         # Company's own OpenAI-compatible gateway. api_key/base_url fall back to the
         # standard OPENAI_API_KEY / OPENAI_BASE_URL env vars (ChatOpenAI's own defaults)
         # when not passed explicitly -- nothing gateway-specific is hardcoded here.
+        # Thinking is disabled per team experience: no measurable capability loss on this
+        # gateway's GLM-5.2 deployment, and it avoids burning max_tokens on reasoning_content.
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=model_id,
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
             max_tokens=max_tokens,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     elif llm_provider == "volcengine":
         # VolcEngine Ark is OpenAI-compatible — use ChatOpenAI, not ChatAnthropic.
@@ -833,6 +837,180 @@ def create_spooky_agent(
         f"- global_budget : {global_budget_secs}s\n"
         f"- num_gpus      : {num_gpus} (not required for this CPU-friendly benchmark)\n"
         f"- gpu_ids       : {gpu_ids or list(range(num_gpus))}\n"
+        f"\nRULE: read_file/write_file/ls MUST use virtual paths (/workspace/, /thompson_state/, /logs/).\n"
+        f"NEVER pass a real absolute path to read_file. Use the real trial-tool script_path above for execute_trial, execute_trial_group, promote_winner, and evaluate_final_incumbent.\n"
+    )
+    if not use_thompson_sampling:
+        system_prompt += TEXTUAL_GRADIENT_ROUTING_PROMPT
+
+    from deepagents import create_deep_agent
+    from deepagents.backends import (
+        CompositeBackend,
+        FilesystemBackend,
+        LocalShellBackend,
+        StateBackend,
+        StoreBackend,
+    )
+    model = _build_model(llm_provider, model_id, api_key, base_url)
+    store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
+    _tools_module._STORE = store
+
+    from gagc.state import ArmState, ThompsonState
+    from gagc.tools import _active_arms
+    default_state = ThompsonState(
+        arms={arm: ArmState(name=arm) for arm in _active_arms()},
+        global_budget=global_budget_secs,
+        score_history=[],
+        rejected_dims_buffer=[],
+        skill_notes="Cold start: no prior knowledge.",
+        pending_queue=[],
+        experiment_skill=default_experiment_skill_for_policy(),
+    )
+    _seed_thompson_state(store, default_state)
+
+    backend = CompositeBackend(
+        default=StateBackend(),
+        routes={
+            "/workspace/":    LocalShellBackend(root_dir=abs_workspace, virtual_mode=True),
+            "/thompson_state/":  StoreBackend(namespace=lambda _rt: ("gagc", "thompson")),
+            "/logs/":         FilesystemBackend(root_dir=abs_logs_root, virtual_mode=True),
+        },
+    )
+
+    agent = create_deep_agent(
+        model=model,
+        tools=[
+            propose_action_group,
+            execute_trial_group,
+            execute_trial,
+            promote_winner,
+            update_thompson_state,
+            evaluate_final_incumbent,
+        ],
+        backend=backend,
+        store=store,
+        checkpointer=_build_checkpointer(abs_logs_root, checkpoint_path, enable_persistent_checkpoint),
+        system_prompt=system_prompt,
+    )
+
+    return agent
+
+
+def create_diversity_agent(
+    # ── LLM ─────────────────────────────────────────────────────────
+    llm_provider: str = "openai",
+    model_id: str = _OPENAI_GATEWAY_MODEL,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    # ── Task ────────────────────────────────────────────────────────
+    sample_path: str = "./input/diversity_v3/sample_500.parquet",
+    vec_path: str = "./input/diversity_v3/vec_filtered.parquet",
+    cold_start: str = "diversity_dpp",
+    # ── Infrastructure ──────────────────────────────────────────────
+    workspace_root: str = "./workspace",
+    logs_root: str = "./logs",
+    global_budget_secs: float = 43200.0,
+    num_gpus: int = 1,
+    num_cpus: int = 8,
+    gpu_ids: list[int] | None = None,
+    use_thompson_sampling: bool = True,
+    enable_persistent_checkpoint: bool = True,
+    checkpoint_path: str | None = None,
+    thompson_state_path: str | None = None,
+):
+    """Build and return the RecHarness orchestrator for diversity_v3 (DPP
+    multi-window search diversity re-ranking).
+
+    Args:
+        llm_provider: 'openai' (default, company gateway) | 'volcengine' | 'anthropic'.
+        model_id: Model name.
+        sample_path: Absolute or relative path to the request-log dataset (Parquet or
+            ORC, directory or file) -- see gagc/benchmarks/diversity_v3/vendor's
+            DATA_DESCRIPTION.md. Written into the cold-start config.yaml's data.sample_path
+            so every trial reads the same shared, un-copied dataset.
+        vec_path: Path to the matching goods-vector dataset (Parquet or ORC).
+        cold_start: Template name: 'diversity_dpp' (fixed DPP algorithm + tunable config.yaml).
+        workspace_root: Root for the incumbent train.py + config.yaml.
+        logs_root: Directory for per-iteration JSON logs.
+        global_budget_secs: Total compute-time budget.
+        num_gpus: Not used by this CPU-only benchmark; kept only for trial-slot scheduling
+            parity with the other agent factories. Default 1 (no real parallelism benefit
+            beyond CPU core count for this benchmark).
+        num_cpus: CPU cores available.
+        gpu_ids: Explicit slot IDs to use (defaults to range(num_gpus)).
+        use_thompson_sampling: If False, run the textual-gradient ablation.
+        enable_persistent_checkpoint: Persist LangGraph checkpoints and Thompson
+            state under logs_root so the same thread_id can resume after restart.
+        checkpoint_path: Optional SQLite checkpoint DB path. Defaults to
+            logs_root/langgraph_checkpoints.sqlite. Set to "memory" to disable.
+        thompson_state_path: Optional Thompson state JSON path. Defaults to
+            logs_root/thompson_state.json. Set to "memory" to disable.
+
+    Usage:
+        from gagc.agent import create_diversity_agent
+        agent = create_diversity_agent(
+            sample_path="./input/diversity_v3/sample_500.parquet",
+            vec_path="./input/diversity_v3/vec_filtered.parquet",
+            workspace_root="./workspace_diversity",
+        )
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": "Maximize combined_pass_rate on diversity_v3."}]},
+            config={"configurable": {"thread_id": "diversity-run-001"}},
+        )
+    """
+    _tools_module._BENCHMARK_MODE = "diversity_v3"
+    _tools_module._DIVERSITY_SAMPLE_PATH = os.path.abspath(sample_path)
+    _tools_module._DIVERSITY_VEC_PATH = os.path.abspath(vec_path)
+    _tools_module._ROUTING_POLICY = "thompson" if use_thompson_sampling else "textual_gradient"
+    os.environ["GAGC_COLD_START"] = cold_start
+
+    _tools_module._SERVER_CONFIG = ServerConfig(
+        num_gpus=num_gpus,
+        num_cpus=num_cpus,
+        cpus_per_trial=num_cpus // max(num_gpus, 1),
+        gpu_ids=gpu_ids or [],
+    )
+    _tools_module._LOGS_ROOT = os.path.abspath(logs_root)
+    _tools_module._WORKSPACE_ROOT = os.path.abspath(workspace_root)
+
+    os.makedirs(logs_root, exist_ok=True)
+    _init_workspace(workspace_root, cold_start)
+
+    abs_workspace = os.path.abspath(workspace_root)
+    abs_logs_root = os.path.abspath(logs_root)
+
+    # Point the cold-start config.yaml's data section at the real dataset -- the
+    # template ships with the source task's own placeholder paths.
+    import yaml
+    config_path = os.path.join(abs_workspace, "config.yaml")
+    with open(config_path, encoding="utf-8") as f:
+        cold_start_config = yaml.safe_load(f)
+    cold_start_config["data"] = {
+        "sample_path": _tools_module._DIVERSITY_SAMPLE_PATH,
+        "vec_path": _tools_module._DIVERSITY_VEC_PATH,
+    }
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(cold_start_config, f, sort_keys=False)
+
+    system_prompt = (
+        DIVERSITY_ORCHESTRATOR_PROMPT
+        + f"\n\n# Runtime context\n"
+        f"## Virtual paths\n"
+        f"- /workspace/config.yaml      — mutable scatter hyperparameters (RecHarness evolves this)\n"
+        f"- /workspace/train.py         — fixed DPP algorithm, NEVER mutate this\n"
+        f"- /thompson_state/state.json  — Thompson Sampling + SkillOpt memory state\n"
+        f"- /logs/iteration_<N>.json    — per-iteration logs\n"
+        f"\n## Real paths\n"
+        f"- trial-tool script_path      : {abs_workspace}/config.yaml\n"
+        f"- git diff workspace path     : {abs_workspace}\n"
+        f"  (use: bash(\"cd {abs_workspace} && git diff config.yaml\") to generate code_diff)\n"
+        f"\n## Data\n"
+        f"- sample_path : {_tools_module._DIVERSITY_SAMPLE_PATH}\n"
+        f"- vec_path    : {_tools_module._DIVERSITY_VEC_PATH}\n"
+        f"- cold_start  : {cold_start}\n"
+        f"\n## Budget\n"
+        f"- global_budget : {global_budget_secs}s\n"
+        f"- num_cpus      : {num_cpus}\n"
         f"\nRULE: read_file/write_file/ls MUST use virtual paths (/workspace/, /thompson_state/, /logs/).\n"
         f"NEVER pass a real absolute path to read_file. Use the real trial-tool script_path above for execute_trial, execute_trial_group, promote_winner, and evaluate_final_incumbent.\n"
     )

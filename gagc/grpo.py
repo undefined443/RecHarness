@@ -68,6 +68,24 @@ SPOOKY_JUMPING_DIMS: set[str] = {"change_architecture"}
 
 
 # ---------------------------------------------------------------------------
+# Arm coupling definitions (diversity_v3 / DPP multi-window search re-ranking)
+# ---------------------------------------------------------------------------
+
+# No architecture arms here -- train.py (the DPP algorithm) is frozen; every
+# arm edits config.yaml's scatter hyperparameters, so there is no basin-jump
+# concept and no mutex interference between arms.
+DIVERSITY_COMPOSITE_ARMS: dict[str, list[str]] = {
+    "tune_diversity_strength": ["tune_dwPower", "tune_qPower"],
+    "tune_similarity_transform": ["tune_simTransformType", "tune_minSim", "tune_expAlpha", "tune_expBias"],
+    "tune_window_config": ["tune_slidingWindowSize", "tune_givens_rotation"],
+}
+
+DIVERSITY_MUTEX_GROUPS: list[set[str]] = []
+
+DIVERSITY_JUMPING_DIMS: set[str] = set()
+
+
+# ---------------------------------------------------------------------------
 # Thompson Sampling
 # ---------------------------------------------------------------------------
 

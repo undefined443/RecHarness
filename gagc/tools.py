@@ -17,6 +17,9 @@ from typing import Any
 
 from gagc.grpo import (
     COMPOSITE_ARMS,
+    DIVERSITY_COMPOSITE_ARMS,
+    DIVERSITY_JUMPING_DIMS,
+    DIVERSITY_MUTEX_GROUPS,
     GR_COMPOSITE_ARMS,
     GR_JUMPING_DIMS,
     GR_MUTEX_GROUPS,
@@ -67,6 +70,8 @@ _SPOOKY_TRAIN_DATA: str = ""
 _SPOOKY_VAL_DATA: str = ""
 _SPOOKY_TEST_DATA: str = ""
 _SPOOKY_PRIVATE_TEST: str = ""
+_DIVERSITY_SAMPLE_PATH: str = ""  # absolute path, shared across trials (never copied per-trial)
+_DIVERSITY_VEC_PATH: str = ""
 _SELECTION_METRIC: str = "val_score"
 
 # ---------------------------------------------------------------------------
@@ -312,7 +317,8 @@ def _resolve_script_path(script_path: str) -> str:
 
 def _is_canonical_workspace_script(script_path: str) -> bool:
     """Detect direct calls against the incumbent script rather than an isolated slot."""
-    return os.path.basename(script_path) == "best.py" and not os.path.basename(os.path.dirname(script_path)).startswith("_trial_")
+    canonical_name = "config.yaml" if _BENCHMARK_MODE == "diversity_v3" else "best.py"
+    return os.path.basename(script_path) == canonical_name and not os.path.basename(os.path.dirname(script_path)).startswith("_trial_")
 
 
 def _spec_has_mutation(spec: MutationSpec) -> bool:
@@ -1080,6 +1086,41 @@ _SPOOKY_DIAG_RULES: list[tuple[str, str, str]] = [
 
 # ---------------------------------------------------------------------------
 
+_DIVERSITY_DIMENSION_HINTS: dict[str, str] = {
+    "tune_dwPower":            "Change dwPower (d_ratio rerank mode) in config.yaml's fstDefConfigMap blocks. delta > 0 means stronger diversification, < 0 means weaker.",
+    "tune_qPower":             "Change qPower (only active when rerankMethod=d_value + preprocessQMethod=q_power) in config.yaml. delta > 0 means weaker diversification, < 0 means stronger.",
+    "tune_simTransformType":   "Change simTransformType (null / ONE_MINUS_EXP_NEG / SQRT_ONE_MINUS_EXP_NEG) in config.yaml to compress the high-similarity region more or less aggressively.",
+    "tune_minSim":             "Change minSim (similarity floor below which no diversity penalty applies) in config.yaml. delta > 0 raises the floor (weaker diversification on near-duplicates), < 0 lowers it.",
+    "tune_expAlpha":           "Change expAlpha (exponential-transform steepness, only active when simTransformType is set) in config.yaml.",
+    "tune_expBias":            "Change expBias (exponential-transform offset, only active when simTransformType is set) in config.yaml.",
+    "tune_slidingWindowSize":  "Change slidingWindowSize for one or both DPP windows in config.yaml. delta > 0 means a larger window (more global diversity context), < 0 means smaller (more local).",
+    "tune_givens_rotation":    "Toggle enableSlidingWindowGivensRotation in config.yaml (sliding-window rank reduction when the window fills up).",
+    "tune_multi_window_fusion": "Jointly tune multiWinNum, weightsFusionMethod, and multiWinWeights in config.yaml -- how the (up to 3) DPP windows combine into one diversity weight.",
+    "tune_exposure_handling":  "Jointly tune expoDefaultQMethod and expoDefaultQ in config.yaml -- how much quality weight previously-exposed (pre_goods) items get in the initial energy suppression.",
+    "tune_rerank_method":      "Jointly tune rerankMethod, preprocessQMethod, and enableMaxEi in config.yaml -- switches between the d_ratio and d_value diversity-weighting modes.",
+}
+
+_DIVERSITY_ALL_DIMENSIONS: list[str] = list(_DIVERSITY_DIMENSION_HINTS.keys())
+
+_DIVERSITY_SUBSUMED_DIMS: set[str] = {
+    dim for dims in DIVERSITY_COMPOSITE_ARMS.values() for dim in dims
+}
+_DIVERSITY_ALL_ARMS: list[str] = list(DIVERSITY_COMPOSITE_ARMS.keys()) + [
+    dim for dim in _DIVERSITY_ALL_DIMENSIONS
+    if dim not in _DIVERSITY_SUBSUMED_DIMS and dim not in DIVERSITY_COMPOSITE_ARMS
+]
+_DIVERSITY_EXPLOITING_ARMS: list[str] = list(_DIVERSITY_ALL_ARMS)  # no jumping arms
+
+# diversity_v3 diagnostics come from decision.py's own contingency-table analysis
+# (wasted_diversity_rate / rv_only_rate / bottleneck), not stdout regex matching --
+# the orchestrator prompt reads those fields from val_metrics directly. Kept
+# minimal here for the one failure mode stdout regex can actually catch.
+_DIVERSITY_DIAG_RULES: list[tuple[str, str, str]] = [
+    ("timeout",          "tune_slidingWindowSize", "Timeout on the full dataset — reduce slidingWindowSize for cheaper Cholesky updates"),
+]
+
+# ---------------------------------------------------------------------------
+
 _DIAG_RULES: list[tuple[str, str, str]] = [
     ("nan",              "tune_lr",             "NaN detected — LR likely too high, decrease LR"),
     ("nan",              "change_loss_function", "NaN detected — BCE numerically unstable, switch to BPR or sampled softmax"),
@@ -1134,6 +1175,8 @@ def _active_arms() -> list[str]:
         return _GR_ALL_ARMS
     if _BENCHMARK_MODE == "spooky_author":
         return _SPOOKY_ALL_ARMS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _DIVERSITY_ALL_ARMS
     return _ALL_ARMS
 
 
@@ -1142,6 +1185,8 @@ def _active_exploiting_arms() -> list[str]:
         return _GR_EXPLOITING_ARMS
     if _BENCHMARK_MODE == "spooky_author":
         return _SPOOKY_EXPLOITING_ARMS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _DIVERSITY_EXPLOITING_ARMS
     return _EXPLOITING_ARMS
 
 
@@ -1157,6 +1202,8 @@ def _active_dimensions() -> list[str]:
         return _GR_ALL_DIMENSIONS
     if _BENCHMARK_MODE == "spooky_author":
         return _SPOOKY_ALL_DIMENSIONS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _DIVERSITY_ALL_DIMENSIONS
     return _ALL_DIMENSIONS
 
 
@@ -1165,6 +1212,8 @@ def _active_dimension_hints() -> dict[str, str]:
         return _GR_DIMENSION_HINTS
     if _BENCHMARK_MODE == "spooky_author":
         return _SPOOKY_DIMENSION_HINTS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _DIVERSITY_DIMENSION_HINTS
     return _DIMENSION_HINTS
 
 
@@ -1173,6 +1222,8 @@ def _active_diag_rules() -> list[tuple[str, str, str]]:
         return _GR_DIAG_RULES
     if _BENCHMARK_MODE == "spooky_author":
         return _SPOOKY_DIAG_RULES
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _DIVERSITY_DIAG_RULES
     return _DIAG_RULES
 
 
@@ -1181,6 +1232,8 @@ def _active_jumping_dims() -> set[str]:
         return GR_JUMPING_DIMS
     if _BENCHMARK_MODE == "spooky_author":
         return SPOOKY_JUMPING_DIMS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return DIVERSITY_JUMPING_DIMS
     return JUMPING_DIMS
 
 
@@ -1195,6 +1248,8 @@ def _active_mutex_groups() -> list[set[str]]:
         return GR_MUTEX_GROUPS
     if _BENCHMARK_MODE == "spooky_author":
         return SPOOKY_MUTEX_GROUPS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return DIVERSITY_MUTEX_GROUPS
     return MUTEX_GROUPS
 
 
@@ -1203,6 +1258,8 @@ def _active_composite_arms() -> dict[str, list[str]]:
         return GR_COMPOSITE_ARMS
     if _BENCHMARK_MODE == "spooky_author":
         return SPOOKY_COMPOSITE_ARMS
+    if _BENCHMARK_MODE == "diversity_v3":
+        return DIVERSITY_COMPOSITE_ARMS
     return COMPOSITE_ARMS
 
 
@@ -1241,6 +1298,8 @@ def _configured_trial_floor_secs() -> float:
         default = 6400.0
     elif _BENCHMARK_MODE == "spooky_author":
         default = 300.0  # TF-IDF+MLP trials are lightweight (CPU, seconds-to-minutes)
+    elif _BENCHMARK_MODE == "diversity_v3":
+        default = 300.0  # ~30s on the 500-request dev sample; full dataset is 30-60min
     else:
         default = 10800.0
     raw = os.getenv("GAGC_TRIAL_SECS", "").strip()
@@ -1972,6 +2031,9 @@ def execute_trial(
             ),
         )
 
+    if _BENCHMARK_MODE == "diversity_v3":
+        return _execute_diversity_trial(spec, script_path, hard_timeout, slot_id)
+
     train_path, predict_path = _resolve_trial_files(script_path)
 
     if _uses_claude_code_backend(spec):
@@ -2252,6 +2314,110 @@ def _run_benchmark_eval(
         convergence_trace = trace or convergence_trace
 
     return val_hr10, convergence_trace, val_metrics
+
+
+def _yaml_syntax_check(path: str) -> str | None:
+    """Return a concise YAML parse error for a mutated config.yaml, if any."""
+    try:
+        import yaml
+        with open(path, "r", encoding="utf-8") as f:
+            yaml.safe_load(f)
+    except Exception as exc:
+        return f"config.yaml is not valid YAML: {exc}"
+    return None
+
+
+def _diversity_branch_best_path() -> str:
+    return os.path.join(_LOGS_ROOT or ".", "diversity_v3_branch_best.json")
+
+
+def _diversity_read_branch_best() -> dict | None:
+    path = _diversity_branch_best_path()
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _diversity_maybe_update_branch_best(metrics: dict) -> None:
+    """Optimistically track the best combined_pass_rate_mean seen so far across all
+    executed trials (not gated on formal promotion) -- decide_keep()'s 4 tolerance
+    gates need a reference point, and this benchmark's promotion isn't threaded
+    through promote_winner (see gagc/benchmarks/diversity_v3/harness.py)."""
+    current = _diversity_read_branch_best()
+    if current is None or metrics.get("combined_pass_rate_mean", 0.0) > current.get("combined_pass_rate_mean", 0.0):
+        try:
+            os.makedirs(_LOGS_ROOT or ".", exist_ok=True)
+            with open(_diversity_branch_best_path(), "w", encoding="utf-8") as f:
+                json.dump(metrics, f, indent=2)
+        except OSError:
+            pass
+
+
+def _execute_diversity_trial(
+    spec: MutationSpec, script_path: str, hard_timeout: float, slot_id: int,
+) -> str:
+    """diversity_v3 trial: mutate config.yaml's scatter section (train.py is fixed),
+    run the vendored prepare.py as a subprocess, and score via the vendored
+    decision.py. See gagc/benchmarks/diversity_v3/harness.py for both."""
+    config_path = script_path
+    workspace_dir = os.path.dirname(config_path)
+
+    if spec.code_edits:
+        err = _apply_text_mutation(config_path, spec.code_edits, "", "config.yaml")
+        if err:
+            return _make_trial_result(
+                spec, wall_time=0.0, timed_out=False, oom=False,
+                val_score=_CRASH_SCORE, convergence_trace=[], error=err,
+            )
+    elif spec.code_content.strip():
+        err = _apply_text_mutation(config_path, [], spec.code_content, "config.yaml")
+        if err:
+            return _make_trial_result(
+                spec, wall_time=0.0, timed_out=False, oom=False,
+                val_score=_CRASH_SCORE, convergence_trace=[], error=err,
+            )
+
+    err = _yaml_syntax_check(config_path)
+    if err:
+        return _make_trial_result(
+            spec, wall_time=0.0, timed_out=False, oom=False,
+            val_score=_CRASH_SCORE, convergence_trace=[], error=err,
+        )
+
+    from gagc.benchmarks.diversity_v3.harness import decide_keep, evaluate
+
+    start = time.time()
+    result = evaluate(workspace_dir, mode="scatter", num_workers=0, timeout_secs=hard_timeout)
+    wall_time = time.time() - start
+
+    if not result.ok:
+        timed_out = result.error_message == "timeout"
+        return _make_trial_result(
+            spec, wall_time=wall_time, timed_out=timed_out, oom=False,
+            val_score=_TIMEOUT_SCORE if timed_out else _CRASH_SCORE,
+            convergence_trace=[], error=result.error_message,
+            stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail,
+        )
+
+    branch_best = _diversity_read_branch_best()
+    kept, reason = decide_keep(result.metrics, branch_best, {})
+    val_metrics = dict(result.metrics)
+    val_metrics["_decide_keep"] = kept
+    val_metrics["_decide_keep_reason"] = reason
+    if result.contingency_table:
+        val_metrics["_contingency_table"] = result.contingency_table
+    _diversity_maybe_update_branch_best(result.metrics)
+
+    return _make_trial_result(
+        spec, wall_time=wall_time, timed_out=False, oom=False,
+        val_score=result.primary_metric, convergence_trace=[result.primary_metric],
+        error=None, val_metrics=val_metrics,
+        stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail,
+    )
 
 
 def _parse_convergence_trace(stdout: str) -> list[float]:
@@ -3313,9 +3479,11 @@ def execute_trial_group(
     except OSError:
         incumbent_predict_content = ""
 
+    slot_filename = "config.yaml" if _BENCHMARK_MODE == "diversity_v3" else "train.py"
+
     def _run_one(idx: int, spec_data: dict) -> tuple[int, str, dict[str, str]]:
         slot_dir = os.path.join(workspace_dir, f"_trial_{idx}")
-        slot_script = os.path.join(slot_dir, "train.py")
+        slot_script = os.path.join(slot_dir, slot_filename)
         slot_predict = os.path.join(slot_dir, "predict.py")
         mutated_payload: dict[str, str] = {}
         try:
@@ -3753,6 +3921,33 @@ def evaluate_final_incumbent(
     if not os.path.isfile(script_path):
         result = {"ok": False, "error": f"missing script_path: {script_path}"}
         _write_json_log("final_eval/latest.json", result)
+        return json.dumps(result, indent=2)
+
+    if _BENCHMARK_MODE == "diversity_v3":
+        from gagc.benchmarks.diversity_v3.harness import evaluate as diversity_evaluate
+        eval_timeout = float(timeout_secs) if timeout_secs is not None else _configured_trial_floor_secs() * 4.0
+        eval_result = diversity_evaluate(workspace_dir, mode="scatter", num_workers=0, timeout_secs=eval_timeout)
+        result = {
+            "ok": eval_result.ok,
+            "timestamp": _utc_now_iso(),
+            "benchmark_mode": _BENCHMARK_MODE,
+            "selection_protocol": "final_report_only",
+            "script_path": script_path,
+            "test_score": eval_result.primary_metric if eval_result.ok else None,
+            "test_metrics": {"DiversityV3": eval_result.metrics} if eval_result.ok else None,
+            "report_metrics": {"DiversityV3": eval_result.metrics} if eval_result.ok else None,
+            "report_table_markdown": None,
+            "aggregate_metrics": eval_result.metrics if eval_result.ok else None,
+            "num_requests": eval_result.num_requests,
+            "num_errors": eval_result.num_errors,
+            "contingency_table": eval_result.contingency_table,
+            "wall_time_secs": time.time() - start,
+            "error_message": eval_result.error_message,
+            "stdout_tail": eval_result.stdout_tail,
+            "stderr_tail": eval_result.stderr_tail,
+        }
+        _write_json_log("final_eval/latest.json", result)
+        _write_json_log(f"final_eval/final_{int(time.time())}.json", result)
         return json.dumps(result, indent=2)
 
     env = _final_runtime_env(slot_id)

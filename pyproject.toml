@@ -35,6 +35,8 @@ dev      = ["pytest>=8", "pytest-asyncio>=0.23"]
 templates = ["torch>=2.2", "numpy>=1.26", "pandas>=2.0", "scikit-learn>=1.3", "tqdm>=4.66"]
 # Only needed to download raw competition data for MLE-Bench Lite benchmarks
 mlebench = ["kaggle>=1.6,<1.7"]
+# Only needed for the diversity_v3 benchmark (reads ORC/Parquet request logs)
+diversity = ["pyarrow>=14.0", "pyyaml>=6.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -46,6 +48,13 @@ testpaths = ["tests"]
 # loop or an arbitrary LLM-mutated training script. Narrowing these on a
 # case-by-case basis would add risk without a clear correctness benefit.
 ignore = ["BLE001", "S110"]
+
+[tool.ruff.lint.per-file-ignores]
+# Vendored verbatim from the diversity_v3 source task package (frozen evaluation
+# pipeline / fixed DPP algorithm, never mutated by RecHarness) -- kept as a
+# faithful copy rather than reformatted, so future re-syncs stay a clean diff.
+"gagc/benchmarks/diversity_v3/vendor/*.py" = ["F541", "F841", "PLW0602", "PLW1510", "PLR1730", "I001"]
+"gagc/templates/diversity_dpp/train.py" = ["F541", "F841", "PLW0602", "PLW1510", "PLR1730", "I001"]
 
 [tool.setuptools.packages.find]
 include = ["gagc*"]
