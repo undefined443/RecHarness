@@ -101,26 +101,31 @@ Do not use α/β values to rank arms in this mode; they are retained only for lo
 
 
 def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url: str | None):
-    """Construct the LangChain chat model for the given provider."""
-    # GLM-5.2 (the default model, on both the OpenAI-compatible gateway and VolcEngine)
-    # is a reasoning model whose reasoning_content can consume most of a small max_tokens
-    # budget, truncating the actual tool-call/answer content to empty and silently ending
-    # the agent loop mid-round. Verified via a local smoke test: 4096 reproduced this
-    # after 1-3 rounds; 16000 did not.
+    """Construct the LangChain chat model for the given provider.
+
+    Every provider is pinned to temperature=0 with the model's thinking/reasoning
+    pass disabled. RecHarness wants runs to be as reproducible as the serving stack
+    allows, and GLM-5.2's reasoning_content otherwise competes with the answer for
+    the max_tokens budget -- a small budget truncates the tool call to empty and
+    silently ends the agent loop mid-round (verified locally: 4096 reproduced this
+    after 1-3 rounds, 16000 did not).
+    """
     max_tokens = int(os.environ.get("GAGC_LLM_MAX_TOKENS", "16000"))
+    # vLLM/SGLang-style thinking switch, accepted by both the company gateway and
+    # VolcEngine Ark's GLM-5.2 deployments.
+    no_thinking = {"chat_template_kwargs": {"enable_thinking": False}}
     if llm_provider == "openai":
         # Company's own OpenAI-compatible gateway. api_key/base_url fall back to the
         # standard OPENAI_API_KEY / OPENAI_BASE_URL env vars (ChatOpenAI's own defaults)
         # when not passed explicitly -- nothing gateway-specific is hardcoded here.
-        # Thinking is disabled per team experience: no measurable capability loss on this
-        # gateway's GLM-5.2 deployment, and it avoids burning max_tokens on reasoning_content.
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=model_id,
             api_key=api_key or os.environ.get("OPENAI_API_KEY"),
             base_url=base_url or os.environ.get("OPENAI_BASE_URL"),
             max_tokens=max_tokens,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            temperature=0,
+            extra_body=no_thinking,
         )
     elif llm_provider == "volcengine":
         # VolcEngine Ark is OpenAI-compatible — use ChatOpenAI, not ChatAnthropic.
@@ -130,13 +135,17 @@ def _build_model(llm_provider: str, model_id: str, api_key: str | None, base_url
             api_key=_resolve_volcengine_api_key(api_key),
             base_url=base_url or os.environ.get("VOLCENGINE_BASE_URL") or _VOLCENGINE_BASE_URL,
             max_tokens=max_tokens,
+            temperature=0,
+            extra_body=no_thinking,
         )
     elif llm_provider == "anthropic":
+        # Claude's extended thinking is opt-in, so it is already off; just pin temperature.
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(
             model=model_id,
             api_key=api_key or os.environ.get("ANTHROPIC_API_KEY", ""),
             max_tokens=max_tokens,
+            temperature=0,
         )
     else:
         # Generic: pass a "provider:model" string directly to deepagents
@@ -1026,6 +1035,7 @@ def create_diversity_agent(
         StoreBackend,
     )
     model = _build_model(llm_provider, model_id, api_key, base_url)
+    _tools_module._LLM_MODEL = model  # the diversity_reactor implementation backend calls this
     store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
     _tools_module._STORE = store
 

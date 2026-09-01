@@ -44,6 +44,9 @@ _CRASH_SCORE = 0.0
 # Module-level store reference — injected by agent.py so update_thompson_state
 # can persist state directly without LLM write_file involvement.
 _STORE: Any = None
+# The run's LangChain chat model — injected by agent.py. Used by the diversity_v3
+# implementation backend (gagc.diversity_reactor) to write config.yaml mutations.
+_LLM_MODEL: Any = None
 _STORE_NAMESPACE: tuple = ("gagc", "thompson")
 _STORE_KEY: str = "/state.json"
 _LOGS_ROOT: str = ""
@@ -451,8 +454,17 @@ def _trial_runtime_env(slot_id: int) -> tuple[dict[str, str], list[int]]:
     return env, cpu_set
 
 
+def _implementation_backend(spec: MutationSpec) -> str:
+    """Backend an arm's implementation is delegated to, or "" for a direct spec."""
+    return str(spec.extra.get("implementation_backend", "")).strip().lower()
+
+
 def _uses_claude_code_backend(spec: MutationSpec) -> bool:
-    return str(spec.extra.get("implementation_backend", "")).strip().lower() == "claude_code"
+    return _implementation_backend(spec) == "claude_code"
+
+
+def _uses_diversity_reactor_backend(spec: MutationSpec) -> bool:
+    return _implementation_backend(spec) == "diversity_reactor"
 
 
 def _has_inline_mutation_payload(spec: MutationSpec) -> bool:
@@ -502,6 +514,26 @@ def _claude_code_backend_fields_for_arm(arm: str) -> dict[str, Any]:
             ),
             "allowed_files": ["train.py", "predict.py"],
             "claude_attempts": 3,
+        }
+
+    if _BENCHMARK_MODE == "diversity_v3":
+        # No claude CLI on the diversity_v3 host: the implementation role is filled by
+        # gagc.diversity_reactor, a single LLM-gateway call with a validate/retry loop.
+        # Every arm is a config.yaml scatter-section edit (no architecture jumps here).
+        return {
+            "implementation_backend": "diversity_reactor",
+            "implementation_prompt": (
+                "Implement one diversity_v3 config.yaml mutation for the selected arm. Edit only "
+                "the scatter: section (multi-window fusion, similarity transform, diversity-weight "
+                "powers, exposure handling, rerank method) in the direction of delta, guided by "
+                "code_hint and the ExperimentSkill memory. Apply the change consistently across all "
+                "four fstDefConfigMap blocks (2 DPP windows x FIRST_POS/DEFAULT) unless the "
+                "hypothesis is explicitly about making the windows or the two sub-blocks differ. "
+                "Never touch train.py or config.yaml's data:, exposure_probs:, baseline_metrics:, "
+                "or vecsim_pass_rate_threshold: sections."
+            ),
+            "allowed_files": ["config.yaml"],
+            "reactor_attempts": 3,
         }
 
     if _BENCHMARK_MODE != "amazon_reviews":
@@ -764,8 +796,8 @@ def _prepare_specs_for_execution(
     prepared: list[dict[str, Any]] = []
     for spec in specs:
         item = deepcopy(spec)
-        is_claude_spec = str(item.get("implementation_backend", "")).strip().lower() == "claude_code"
-        if use_last or is_claude_spec:
+        has_impl_backend = bool(str(item.get("implementation_backend", "")).strip())
+        if use_last or has_impl_backend:
             item["code_edits"] = []
             item["code_diff"] = ""
             item["code_content"] = ""
@@ -2380,6 +2412,31 @@ def _execute_diversity_trial(
                 spec, wall_time=0.0, timed_out=False, oom=False,
                 val_score=_CRASH_SCORE, convergence_trace=[], error=err,
             )
+    elif _uses_diversity_reactor_backend(spec):
+        # The arm's implementation is delegated to gagc.diversity_reactor (declared by
+        # propose_action_group via _claude_code_backend_fields_for_arm) -- the run's own
+        # LLM writes the config.yaml mutation from the hypothesis, with a validate/retry
+        # loop, mirroring how claude_code_backend fills the same role for other benchmarks.
+        if not hasattr(_LLM_MODEL, "invoke"):
+            return _make_trial_result(
+                spec, wall_time=0.0, timed_out=False, oom=False,
+                val_score=_CRASH_SCORE, convergence_trace=[],
+                error="diversity_reactor: no LLM model is configured for this run",
+            )
+        from gagc.diversity_reactor import generate_config_mutation
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            current_config = f.read()
+        attempts = int(spec.extra.get("reactor_attempts", 3) or 3)
+        mutated = generate_config_mutation(_LLM_MODEL, current_config, spec, max_attempts=attempts)
+        if not mutated:
+            return _make_trial_result(
+                spec, wall_time=0.0, timed_out=False, oom=False,
+                val_score=_CRASH_SCORE, convergence_trace=[],
+                error="diversity_reactor could not produce a valid config.yaml mutation after retries",
+            )
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(mutated)
 
     err = _yaml_syntax_check(config_path)
     if err:
