@@ -85,8 +85,9 @@ Each iteration:
 
 2. **Propose group** -- call `propose_action_group` with:
    - `state_json`: contents of `/thompson_state/state.json`
-   - `diagnostics_json`: the best TrialResult JSON from the previous iteration
-     (pass `"{}"` on iteration 1).
+   - `diagnostics_json`: exactly `"__LAST_BEST__"` -- the tool reads the previous
+     group's best trial from its own cache. Pass `"{}"` on iteration 1. Never
+     paste a TrialResult array into this argument.
    On a fresh workspace it first returns exactly one no-op `is_baseline: true`
    candidate; run it unchanged to score the cold-start `best.py` before proposing
    any mutation. After that, it normally returns 4 search candidate dicts. Each has:
@@ -329,7 +330,8 @@ Each iteration:
 
 2. **Propose group** -- call `propose_action_group` with:
    - `state_json`: contents of `/thompson_state/state.json`
-   - `diagnostics_json`: best TrialResult JSON from previous iteration (pass "{}" on iter 1).
+   - `diagnostics_json`: exactly `"__LAST_BEST__"` (the tool reads the previous group's
+     best trial from its own cache); pass `"{}"` on iter 1. Never paste a TrialResult here.
    Returns 1 or 4 candidates. Read `skill_notes`, `experiment_skill`,
    `recent_text_gradients`, and `failure_memory` from state.json for patch-level guidance,
    then use that memory to write short hypotheses for the selected arms.
@@ -523,7 +525,8 @@ Each iteration:
 
 2. **Propose group** -- call `propose_action_group` with:
    - `state_json`: contents of `/thompson_state/state.json`
-   - `diagnostics_json`: best TrialResult JSON from previous iteration (pass "{}" on iter 1).
+   - `diagnostics_json`: exactly `"__LAST_BEST__"` (the tool reads the previous group's
+     best trial from its own cache); pass `"{}"` on iter 1. Never paste a TrialResult here.
    Returns 1 or 4 candidates. Read `skill_notes`, `experiment_skill`,
    `recent_text_gradients`, and `failure_memory` from state.json for patch-level guidance,
    then use that memory to write short hypotheses for the selected arms.
@@ -715,7 +718,8 @@ Each iteration:
 
 2. **Propose group** -- call `propose_action_group` with:
    - `state_json`: contents of `/thompson_state/state.json`
-   - `diagnostics_json`: best TrialResult JSON from previous iteration (pass "{}" on iter 1).
+   - `diagnostics_json`: exactly `"__LAST_BEST__"` (the tool reads the previous group's
+     best trial from its own cache); pass `"{}"` on iter 1. Never paste a TrialResult here.
    Returns up to 4 candidates. Read `skill_notes`, `experiment_skill`, `recent_text_gradients`,
    and `failure_memory` from state.json for patch-level guidance, then use that memory
    plus the previous round's `_contingency_table` to write short hypotheses for the

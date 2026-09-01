@@ -841,6 +841,33 @@ def _read_latest_trial_results_log() -> list[dict[str, Any]]:
         return []
 
 
+def _resolve_diagnostics(diagnostics_json: str) -> dict[str, Any]:
+    """Resolve propose_action_group's diagnostics argument to a TrialResult dict.
+
+    Preferred form is the ``"__LAST_BEST__"`` sentinel: the tool then reads the
+    previous group's best valid trial straight from the results cache, so the LLM
+    never has to re-narrate a TrialResult JSON that keeps growing (and that
+    GLM-5.2 eventually truncates in long contexts). A literal JSON object is
+    still accepted for backward compatibility; a corrupt one degrades to ``{}``
+    -- diag only seeds the diagnostic hint text and the score ceiling, never
+    worth crashing the search loop over.
+    """
+    raw = (diagnostics_json or "").strip()
+    if raw in ("__LAST_BEST__", "LAST_BEST"):
+        cached = _read_latest_trial_results_log() or deepcopy(_LAST_TRIAL_RESULTS)
+        best = _select_winner_by_benchmark(cached) if cached else None
+        return deepcopy(best) if best else {}
+    if not raw or raw == "{}":
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        print(f"[gagc] warning: corrupt diagnostics_json from LLM; treating as empty: {exc}",
+              file=sys.stderr)
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _select_winner_index(results: list[dict[str, Any]]) -> int | None:
     winner = _select_winner_by_benchmark(results)
     if winner is None:
@@ -1707,7 +1734,9 @@ def propose_action_group(
     Args:
         state_json: JSON-serialised ThompsonState (or empty for cold start).
             The tool reads authoritative state from the internal store automatically.
-        diagnostics_json: JSON of the previous best TrialResult. Pass "{}" on iteration 1.
+        diagnostics_json: Pass "__LAST_BEST__" (the tool reads the previous
+            group's best trial from the results cache) or "{}" on iteration 1.
+            A literal previous-best TrialResult JSON is still accepted.
         group_size: Maximum number of parallel trials (default 4).
         explore_sigma: Unused — kept for API backward compatibility.
         textual_selected_arms_json: Optional LLM-selected arms for TS-off ablation.
@@ -1780,16 +1809,7 @@ def propose_action_group(
         _write_json_log(f"selection/round_{state.round_idx + 1:04d}.json", _LAST_SELECTION_LOG)
         return json.dumps(candidates, indent=2)
 
-    try:
-        diag: dict[str, Any] = json.loads(diagnostics_json) if diagnostics_json.strip() else {}
-    except (json.JSONDecodeError, ValueError) as exc:
-        # GLM-5.2 occasionally truncates the re-narrated TrialResult JSON it
-        # passes here once the context grows large. diag only feeds the LLM
-        # diagnostic hint text and a ceiling estimate, so an empty dict is a
-        # safe degrade -- never worth crashing the search loop over.
-        print(f"[gagc] warning: corrupt diagnostics_json from LLM; treating as empty: {exc}",
-              file=sys.stderr)
-        diag = {}
+    diag: dict[str, Any] = _resolve_diagnostics(diagnostics_json)
     diag_blob = " ".join([
         str(diag.get("error_message", "")),
         str(diag.get("stdout_tail", "")),
