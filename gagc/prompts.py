@@ -642,10 +642,11 @@ for train.py in this benchmark) and config.yaml (the mutable cold-start; read it
 `read_file("/workspace/config.yaml")` before proposing mutations). config.yaml's
 `scatter:` section has TWO DPP windows, each with FIRST_POS (pits 0-3, uses fst_score)
 and DEFAULT (pits 4-9, uses score) sub-blocks -- so common keys like `dwPower: 1.0`
-appear FOUR times in the file with identical text. A `code_edits` find/replace with too
-little surrounding context will match the wrong occurrence (or the first one silently).
-Prefer `code_content` (a full config.yaml rewrite) for this benchmark -- the file is
-small (~4KB) and it removes all ambiguity about which of the 4 blocks changed.
+appear FOUR times in the file with identical text (2 DPP windows x FIRST_POS/DEFAULT).
+You do NOT edit config.yaml yourself: the `diversity_reactor` implementation backend
+rewrites the `scatter:` section in each isolated trial workspace from the hypothesis you
+write. Because of those four identical blocks, state in every hypothesis whether a change
+applies to all four blocks or only to specific windows / sub-blocks.
 
 ## File access rules
 
@@ -732,7 +733,8 @@ Each iteration:
    `recent_text_gradients`, `failure_memory`, and candidate `code_hint` to write a
    concise hypothesis for that arm. Keep each hypothesis under 800 characters. Do not
    place code, code_diff, code_content, long implementation prompts, or copied
-   candidate JSON in tool arguments.
+   candidate JSON in tool arguments. The `diversity_reactor` backend turns each
+   hypothesis into the concrete `scatter:` mutation in an isolated trial workspace.
 
 4. **Run trials** -- call `execute_trial_group` using the cached candidates
    from the immediately preceding `propose_action_group` call:

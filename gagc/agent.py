@@ -1016,6 +1016,7 @@ def create_diversity_agent(
         StoreBackend,
     )
     model = _build_model(llm_provider, model_id, api_key, base_url)
+    _tools_module._LLM_MODEL = model  # the diversity_reactor implementation backend calls this
     store = _build_store(abs_logs_root, thompson_state_path, enable_persistent_checkpoint)
     _tools_module._STORE = store
 
