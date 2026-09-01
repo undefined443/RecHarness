@@ -3774,7 +3774,10 @@ def promote_winner(
     backup_code = current_code
     backup_predict = current_predict
     train_path = os.path.join(workspace_dir, "train.py")
-    train_py_existed = os.path.exists(train_path)
+    # diversity_v3's train.py is the frozen DPP algorithm (script_path is config.yaml,
+    # not a training script) -- never sync the promoted content into it. For the
+    # training benchmarks best.py and train.py are the same source and must stay in sync.
+    train_py_existed = _BENCHMARK_MODE != "diversity_v3" and os.path.exists(train_path)
     try:
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(new_code)
