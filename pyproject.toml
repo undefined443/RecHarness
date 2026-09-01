@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "recharness"
-version = "1.4.1"
+version = "1.4.3"
 description = "A bandit-routed agentic harness for self-evolving recommender systems"
 readme = "README.md"
 license = {text = "MIT"}

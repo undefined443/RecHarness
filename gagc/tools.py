@@ -1780,7 +1780,16 @@ def propose_action_group(
         _write_json_log(f"selection/round_{state.round_idx + 1:04d}.json", _LAST_SELECTION_LOG)
         return json.dumps(candidates, indent=2)
 
-    diag: dict[str, Any] = json.loads(diagnostics_json) if diagnostics_json.strip() else {}
+    try:
+        diag: dict[str, Any] = json.loads(diagnostics_json) if diagnostics_json.strip() else {}
+    except (json.JSONDecodeError, ValueError) as exc:
+        # GLM-5.2 occasionally truncates the re-narrated TrialResult JSON it
+        # passes here once the context grows large. diag only feeds the LLM
+        # diagnostic hint text and a ceiling estimate, so an empty dict is a
+        # safe degrade -- never worth crashing the search loop over.
+        print(f"[gagc] warning: corrupt diagnostics_json from LLM; treating as empty: {exc}",
+              file=sys.stderr)
+        diag = {}
     diag_blob = " ".join([
         str(diag.get("error_message", "")),
         str(diag.get("stdout_tail", "")),
