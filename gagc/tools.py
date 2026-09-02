@@ -75,6 +75,7 @@ _SPOOKY_TEST_DATA: str = ""
 _SPOOKY_PRIVATE_TEST: str = ""
 _DIVERSITY_SAMPLE_PATH: str = ""  # absolute path, shared across trials (never copied per-trial)
 _DIVERSITY_VEC_PATH: str = ""
+_DIVERSITY_FINAL_SAMPLE_PATH: str = ""  # full-dataset path for evaluate_final_incumbent; "" = keep the search sample
 _SELECTION_METRIC: str = "val_score"
 
 # ---------------------------------------------------------------------------
@@ -3992,16 +3993,57 @@ def _kuairec_report_metrics(test_metrics: dict | None) -> dict | None:
     }
 
 
+def _read_diversity_sample_path(config_path: str) -> str:
+    """Return config.yaml's data.sample_path, or "" when it cannot be read."""
+    try:
+        import yaml
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return str((cfg.get("data") or {}).get("sample_path") or "")
+    except Exception:
+        return ""
+
+
+def _swap_diversity_sample_path(config_path: str, sample_path: str) -> str | None:
+    """Point config.yaml's data.sample_path at sample_path for a one-off final eval.
+
+    Returns the original file text so the caller can restore it byte-for-byte in a
+    finally block, or None if the rewrite did not happen (already on that path, or
+    unreadable) -- the eval then runs on the unchanged config.
+    """
+    try:
+        import yaml
+        with open(config_path, encoding="utf-8") as f:
+            original = f.read()
+        cfg = yaml.safe_load(original) or {}
+        data = cfg.get("data")
+        if not isinstance(data, dict) or data.get("sample_path") == sample_path:
+            return None
+        data["sample_path"] = sample_path
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False)
+        return original
+    except Exception:
+        return None
+
+
 def evaluate_final_incumbent(
     script_path: str = "/workspace/best.py",
     slot_id: int = 0,
     timeout_secs: float | None = None,
+    sample_path: str = "",
 ) -> str:
     """Train/evaluate the frozen incumbent once on the held-out test split.
 
     This tool is for final reporting only. It does not update Thompson state,
     does not promote code, and must not be fed back into future search rounds.
     Amazon returns per-dataset HR/NDCG metrics; KuaiRec returns WT/WR xAUC/MAE.
+
+    For diversity_v3 the search runs on a small sample; this call evaluates on the
+    full production dataset when one was configured (sample_path arg, else the
+    injected _DIVERSITY_FINAL_SAMPLE_PATH), restoring the search-time config.yaml
+    afterward. num_requests / full_dataset_eval / evaluated_sample_path in the
+    result record which dataset was actually used.
     """
     script_path = _resolve_script_path(script_path)
     start = time.time()
@@ -4014,8 +4056,17 @@ def evaluate_final_incumbent(
 
     if _BENCHMARK_MODE == "diversity_v3":
         from gagc.benchmarks.diversity_v3.harness import evaluate as diversity_evaluate
-        eval_timeout = float(timeout_secs) if timeout_secs is not None else _configured_trial_floor_secs() * 4.0
-        eval_result = diversity_evaluate(workspace_dir, mode="scatter", num_workers=0, timeout_secs=eval_timeout)
+        eval_timeout = float(timeout_secs) if timeout_secs is not None else 14400.0
+        config_path = os.path.join(workspace_dir, "config.yaml")
+        effective_sample = sample_path.strip() or _DIVERSITY_FINAL_SAMPLE_PATH
+        restore_config = _swap_diversity_sample_path(config_path, effective_sample) if effective_sample else None
+        try:
+            eval_result = diversity_evaluate(workspace_dir, mode="scatter", num_workers=0, timeout_secs=eval_timeout)
+        finally:
+            if restore_config is not None:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    f.write(restore_config)
+        evaluated_sample = effective_sample if restore_config is not None else _read_diversity_sample_path(config_path)
         result = {
             "ok": eval_result.ok,
             "timestamp": _utc_now_iso(),
@@ -4034,7 +4085,16 @@ def evaluate_final_incumbent(
             "error_message": eval_result.error_message,
             "stdout_tail": eval_result.stdout_tail,
             "stderr_tail": eval_result.stderr_tail,
+            "evaluated_sample_path": evaluated_sample,
+            "full_dataset_eval": restore_config is not None,
         }
+        if re.search(r"hr=\d+", evaluated_sample or ""):
+            result["warning"] = (
+                "final eval ran on an hr= partition subset; pass a full-dataset "
+                "sample_path (or launch with --final-sample-path) for a representative final report"
+            )
+            print("[gagc] warning: diversity_v3 final eval ran on a subset sample_path",
+                  file=sys.stderr)
         _write_json_log("final_eval/latest.json", result)
         _write_json_log(f"final_eval/final_{int(time.time())}.json", result)
         return json.dumps(result, indent=2)

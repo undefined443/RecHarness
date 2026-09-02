@@ -10,6 +10,8 @@
 #                   directory), required
 #   --vec-path     Path to the matching goods-vector dataset (Parquet or ORC),
 #                   required
+#   --final-sample-path  Full production dataset for the final report only; search
+#                   stays on --sample-path (default: same as --sample-path)
 #   --budget       Total compute-time budget in seconds (default: 43200)
 #   --trial-secs   Estimated cost per trial in seconds (default: 300)
 #   --cold-start   Cold-start template: diversity_dpp (default: diversity_dpp)
@@ -46,6 +48,7 @@ export LANGCHAIN_TRACING_V2="${LANGCHAIN_TRACING_V2:-true}"
 # Default parameters.
 SAMPLE_PATH=""
 VEC_PATH=""
+FINAL_SAMPLE_PATH=""
 BUDGET=43200
 TRIAL_SECS=300
 COLD_START="diversity_dpp"
@@ -57,13 +60,14 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --sample-path) SAMPLE_PATH="$2"; shift 2 ;;
         --vec-path)    VEC_PATH="$2";    shift 2 ;;
+        --final-sample-path) FINAL_SAMPLE_PATH="$2"; shift 2 ;;
         --budget)      BUDGET="$2";      shift 2 ;;
         --trial-secs)  TRIAL_SECS="$2";  shift 2 ;;
         --cold-start)  COLD_START="$2";  shift 2 ;;
         --cpus)        CPUS="$2";        shift 2 ;;
         --run-id)      RUN_ID="$2";      shift 2 ;;
         --help)
-            sed -n '6,20p' "$0" | sed 's/^# \?//'
+            sed -n '6,22p' "$0" | sed 's/^# \?//'
             exit 0
             ;;
         *) die "Unknown argument: $1 (run bash diversity.sh --help for usage)" ;;
@@ -115,6 +119,10 @@ _abs_path() {
 }
 SAMPLE_PATH="$(_abs_path "$SAMPLE_PATH")"
 VEC_PATH="$(_abs_path "$VEC_PATH")"
+if [[ -n "$FINAL_SAMPLE_PATH" ]]; then
+    FINAL_SAMPLE_PATH="$(_abs_path "$FINAL_SAMPLE_PATH")"
+    [[ -e "$FINAL_SAMPLE_PATH" ]] || die "--final-sample-path does not exist: ${FINAL_SAMPLE_PATH}"
+fi
 
 if [[ ! -e "$SAMPLE_PATH" ]] || [[ ! -e "$VEC_PATH" ]]; then
     log_error "Missing dataset path(s):"
@@ -139,6 +147,7 @@ $PYTHON -c "import langchain_openai" 2>/dev/null || { uv pip install langchain-o
 log_info "Run ID        : ${RUN_ID}"
 log_info "Sample data   : ${SAMPLE_PATH}"
 log_info "Vector data   : ${VEC_PATH}"
+log_info "Final sample  : ${FINAL_SAMPLE_PATH:-(same as sample data)}"
 log_info "CPUs: ${CPUS}  |  Budget: ${BUDGET}s  |  TrialSecs: ${TRIAL_SECS}s"
 log_info "Cold start  : ${COLD_START}"
 log_info "LangSmith : ${LANGSMITH_PROJECT}"
@@ -176,6 +185,7 @@ agent = create_diversity_agent(
     model_id      = "glm_52_fp8",
     sample_path   = "${SAMPLE_PATH}",
     vec_path      = "${VEC_PATH}",
+    final_sample_path = "${FINAL_SAMPLE_PATH}",
     cold_start    = "${COLD_START}",
     workspace_root = "${WORKSPACE}",
     logs_root      = "${LOGS_DIR}",

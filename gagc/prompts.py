@@ -631,11 +631,12 @@ See gagc/benchmarks/diversity_v3/vendor/prepare.py's docstring for exact formula
 ## Execution environment
 
 The dev sample (500 requests) evaluates in ~30s; the full production dataset (600K+
-requests) takes 30-60min -- config.yaml's `data:` section picks which one. Search
-should stay on the dev sample; only evaluate_final_incumbent (or a config.yaml you
-edit yourself for a genuine final report) should point at the full dataset. This task
-does not use a GPU; trial parallelism follows the same CPU-slot scheduling as other
-benchmarks.
+requests) takes 30-60min. Search always runs on the dev sample in config.yaml's
+`data:` section -- never edit that section yourself. `evaluate_final_incumbent`
+switches to the full dataset on its own (from the launcher's final_sample_path) and
+restores the search sample afterward, so the final report is representative without
+any manual config change. This task does not use a GPU; trial parallelism follows the
+same CPU-slot scheduling as other benchmarks.
 
 ## Cold-start
 
@@ -731,6 +732,8 @@ Each iteration:
    If the returned group is NOT budget-safe (`global_budget < parallel_group_estimated_wall_secs`),
    do not call `execute_trial_group` -- stop the search loop immediately, call
    `evaluate_final_incumbent(script_path)` on the current incumbent, and report final results.
+   That call evaluates on the full production dataset on its own (it may take ~1h) and
+   restores the search sample -- do not edit config.yaml's `data:` section for it.
 
 3. **Generate short textual hypotheses only** -- For each selected candidate, use
    run feedback, `_contingency_table`, `_decide_keep_reason`, `experiment_skill`,
@@ -770,12 +773,14 @@ Each iteration:
 
 update_thompson_state auto-maintains the `experiment_skill` field in state.json with patch-level
 winner lessons and concrete failure avoids. Use this memory to write short hypotheses for selected arms; do not write code into tool-call arguments.
-Thompson reward and promotion are validation-only against whatever dataset config.yaml's
-`data:` section currently points at (the dev sample during search).
+Thompson reward and promotion are validation-only against the dev sample in config.yaml's
+`data:` section; leave that section alone.
 After the search budget is exhausted or the user asks for final reporting, call
 `evaluate_final_incumbent(script_path)` exactly once on the frozen incumbent config.yaml
-and report the returned test_metrics.DiversityV3 standard 1-4 breakdown. Do not feed
-final results into another round.
+and report the returned test_metrics.DiversityV3 standard 1-4 breakdown. That call runs
+on the full production dataset by itself (check `full_dataset_eval` / `num_requests` in
+its result) and restores the dev sample; a `warning` field means it fell back to a
+subset. Do not feed final results into another round.
 
 ## Key constraints
 

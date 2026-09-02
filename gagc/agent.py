@@ -914,6 +914,7 @@ def create_diversity_agent(
     # ── Task ────────────────────────────────────────────────────────
     sample_path: str = "./input/diversity_v3/sample_500.parquet",
     vec_path: str = "./input/diversity_v3/vec_filtered.parquet",
+    final_sample_path: str = "",
     cold_start: str = "diversity_dpp",
     # ── Infrastructure ──────────────────────────────────────────────
     workspace_root: str = "./workspace",
@@ -938,6 +939,10 @@ def create_diversity_agent(
             DATA_DESCRIPTION.md. Written into the cold-start config.yaml's data.sample_path
             so every trial reads the same shared, un-copied dataset.
         vec_path: Path to the matching goods-vector dataset (Parquet or ORC).
+        final_sample_path: Optional full production dataset for evaluate_final_incumbent.
+            Search stays on sample_path; the final report evaluates on this larger
+            dataset (config.yaml's data.sample_path is swapped for that one call and
+            restored). Empty means the final report also runs on sample_path.
         cold_start: Template name: 'diversity_dpp' (fixed DPP algorithm + tunable config.yaml).
         workspace_root: Root for the incumbent train.py + config.yaml.
         logs_root: Directory for per-iteration JSON logs.
@@ -970,6 +975,7 @@ def create_diversity_agent(
     _tools_module._BENCHMARK_MODE = "diversity_v3"
     _tools_module._DIVERSITY_SAMPLE_PATH = os.path.abspath(sample_path)
     _tools_module._DIVERSITY_VEC_PATH = os.path.abspath(vec_path)
+    _tools_module._DIVERSITY_FINAL_SAMPLE_PATH = os.path.abspath(final_sample_path) if final_sample_path else ""
     _tools_module._ROUTING_POLICY = "thompson" if use_thompson_sampling else "textual_gradient"
     os.environ["GAGC_COLD_START"] = cold_start
 
@@ -1014,9 +1020,11 @@ def create_diversity_agent(
         f"- git diff workspace path     : {abs_workspace}\n"
         f"  (use: bash(\"cd {abs_workspace} && git diff config.yaml\") to generate code_diff)\n"
         f"\n## Data\n"
-        f"- sample_path : {_tools_module._DIVERSITY_SAMPLE_PATH}\n"
-        f"- vec_path    : {_tools_module._DIVERSITY_VEC_PATH}\n"
-        f"- cold_start  : {cold_start}\n"
+        f"- sample_path       : {_tools_module._DIVERSITY_SAMPLE_PATH}\n"
+        f"- vec_path          : {_tools_module._DIVERSITY_VEC_PATH}\n"
+        f"- final_sample_path : {_tools_module._DIVERSITY_FINAL_SAMPLE_PATH or '(same as sample_path)'}"
+        f"  -- evaluate_final_incumbent auto-evaluates on this; do not edit config.yaml yourself\n"
+        f"- cold_start        : {cold_start}\n"
         f"\n## Budget\n"
         f"- global_budget : {global_budget_secs}s\n"
         f"- num_cpus      : {num_cpus}\n"
